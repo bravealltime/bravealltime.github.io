@@ -458,7 +458,9 @@ async function saveToFirebase(data) {
                 rate: bill.rate || 0,
                 total: bill.total || 0,
                 totalAll: bill.totalAll || 0,
-                timestamp: timestamp
+                timestamp: timestamp,
+                room: '001',
+                name: 'ป้านาท'
             });
         });
 
