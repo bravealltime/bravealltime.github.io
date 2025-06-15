@@ -98,6 +98,7 @@ async function renderHistoryTable(data = null, sortBy = 'date', room = null) {
         if (!data) {
             const snapshot = await db.ref('electricityData').once('value');
             data = snapshot.val();
+            console.log('โหลดข้อมูลจาก Firebase:', data);
         }
         // Convert object to array if needed
         if (data && typeof data === 'object' && !Array.isArray(data)) {
@@ -106,6 +107,7 @@ async function renderHistoryTable(data = null, sortBy = 'date', room = null) {
         // Filter by room if specified
         if (room) {
             data = data.filter(bill => bill.room === room);
+            console.log('ข้อมูลหลัง filter room:', data, 'room:', room);
         }
         // Validate data
         if (!data || !Array.isArray(data) || data.length === 0) {
@@ -145,14 +147,18 @@ async function renderHistoryTable(data = null, sortBy = 'date', room = null) {
                 <td class="py-3 px-3 text-center">${bill.total ? bill.total.toFixed(2) : ''}</td>
                 <td class="py-3 px-3 text-center">${bill.totalAll ? bill.totalAll.toFixed(2) : ''}</td>
                 <td class="py-3 px-3 text-center">
-                    <div class="flex justify-center gap-2">
+                    <div class="flex justify-center gap-2 items-center">
                         <button onclick="showResultModalFromHistory('${bill.date}', '${bill.room}')" class="text-blue-400 hover:text-blue-300 transition-colors" title="แสดงผลลัพธ์">
                             <i class="fas fa-eye"></i>
                         </button>
-                        <button onclick="editBill('${bill.date}', '${bill.room}')" class="text-secondary hover:text-secondary/80 transition-colors" title="แก้ไข">
+                        <button type="button" class="attach-evidence-btn text-purple-500 hover:text-purple-700 transition-colors" data-date="${bill.date}" data-room="${bill.room}" title="แนบ/เปลี่ยนรูปหลักฐาน">
+                            <i class="fas fa-image"></i>
+                        </button>
+                        ${bill.evidenceUrl ? `<button type="button" class="view-evidence-btn text-green-500 hover:text-green-700 transition-colors" data-src="${bill.evidenceUrl}" title="ดูรูปหลักฐาน"><i class="fas fa-eye"></i></button>` : ''}
+                        <button onclick="editBill('${bill.date}', '${bill.room}')" class="text-yellow-500 hover:text-yellow-600 transition-colors" title="แก้ไข">
                             <i class="fas fa-edit"></i>
                         </button>
-                        <button onclick="deleteBill('${bill.date}', '${bill.room}')" class="text-accent hover:text-accent/80 transition-colors" title="ลบ">
+                        <button onclick="deleteBill('${bill.date}', '${bill.room}')" class="text-red-500 hover:text-red-700 transition-colors" title="ลบ">
                             <i class="fas fa-trash-alt"></i>
                         </button>
                     </div>
@@ -162,6 +168,15 @@ async function renderHistoryTable(data = null, sortBy = 'date', room = null) {
         document.getElementById('history-body').innerHTML = rows;
         document.getElementById('no-history').classList.add('hidden');
         updatePagination(data.length);
+        // Bind event ปุ่มแนบรูป (fa-image) หลัง render
+        const attachBtns = document.querySelectorAll('.attach-evidence-btn');
+        attachBtns.forEach(btn => {
+            btn.onclick = function(e) {
+                const date = btn.getAttribute('data-date');
+                const room = btn.getAttribute('data-room');
+                window.handleAttachEvidenceImage(e, date, room);
+            };
+        });
     } catch (error) {
         document.getElementById('history-body').innerHTML = '';
         document.getElementById('no-history').classList.remove('hidden');
@@ -192,11 +207,9 @@ async function saveToFirebase(data) {
         const billsRef = db.ref('electricityData');
         const newBillRef = billsRef.push();
         const key = newBillRef.key;
-        // เพิ่มข้อมูลห้องและชื่อ
+        // เพิ่ม firebaseKey เท่านั้น ไม่ hardcode room/name
         const billData = {
             ...data,
-            room: '001',
-            name: 'ป้านาท',
             firebaseKey: key
         };
         await newBillRef.set(billData);
@@ -235,6 +248,13 @@ function getThaiMonth(date) {
 // ฟังก์ชันสำหรับคำนวณค่าไฟ
 async function calculateBill() {
     try {
+        // ดึง room จาก query string
+        const params = new URLSearchParams(window.location.search);
+        const room = params.get('room');
+        if (!room) {
+            alert('กรุณาเลือกห้องก่อนบันทึกข้อมูล');
+            return;
+        }
         const date = document.getElementById('bill-date').value;
         const current = parseFloat(document.getElementById('current-reading').value);
         const previous = parseFloat(document.getElementById('previous-reading').value);
@@ -265,7 +285,7 @@ async function calculateBill() {
             rate: rate,
             total: total,
             totalAll: totalAll,
-            room: '001',
+            room: room, // ใช้ค่าจาก query string
             name: 'ป้านาท',
             timestamp: Date.now()
         };
@@ -273,9 +293,11 @@ async function calculateBill() {
         // บันทึกข้อมูลลง Firebase
         await saveToFirebase(billData);
 
-        // ดึงประวัติใหม่จากฐานข้อมูลและอัปเดตตาราง
-        await renderHistoryTable();
-        await updatePreviousReadingFromDB();
+        // รีเซ็ตหน้า pagination
+        currentPage = 1;
+        // ดึงประวัติใหม่จากฐานข้อมูลและอัปเดตตาราง (ส่ง room ปัจจุบัน)
+        await renderHistoryTable(null, 'date', room);
+        await updatePreviousReadingFromDB(room);
 
         // แสดงสรุปผลลัพธ์ใต้ประวัติ เฉพาะครั้งแรกที่บันทึกข้อมูลใหม่
         if (!hasShownInlineResult) {
@@ -453,8 +475,13 @@ async function deleteBill(date, room) {
         }
         if (keyToDelete) {
             await db.ref(`electricityData/${keyToDelete}`).remove();
-            await renderHistoryTable();
-            await updatePreviousReadingFromDB();
+            // รีเซ็ตหน้า pagination
+            currentPage = 1;
+            // รีเฟรชตารางและ previous reading (ส่ง room ปัจจุบัน)
+            const params = new URLSearchParams(window.location.search);
+            const currentRoom = params.get('room');
+            await renderHistoryTable(null, 'date', currentRoom);
+            await updatePreviousReadingFromDB(currentRoom);
             alert('ลบข้อมูลเรียบร้อยแล้ว');
         } else {
             alert('ไม่พบข้อมูลที่ต้องการลบในฐานข้อมูล');
@@ -1338,3 +1365,431 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 });
+
+document.addEventListener('DOMContentLoaded', function() {
+    // ... existing code ...
+    // Drag & Drop + Preview + Resize for edit evidence image
+    const dropzone = document.getElementById('edit-evidence-dropzone');
+    const fileInput = document.getElementById('edit-evidence-image');
+    const preview = document.getElementById('edit-evidence-preview');
+    const placeholder = document.getElementById('edit-evidence-placeholder');
+    let resizedImageFile = null;
+
+    function showPreview(file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            preview.innerHTML = '';
+            const img = document.createElement('img');
+            img.src = e.target.result;
+            preview.appendChild(img);
+            const btn = document.createElement('button');
+            btn.textContent = 'ลบรูป';
+            btn.className = 'remove-image-btn';
+            btn.onclick = function(ev) {
+                ev.preventDefault();
+                preview.innerHTML = '';
+                fileInput.value = '';
+                resizedImageFile = null;
+                placeholder.style.display = '';
+            };
+            preview.appendChild(btn);
+            placeholder.style.display = 'none';
+        };
+        reader.readAsDataURL(file);
+    }
+
+    function resizeImage(file, maxWidth = 800, callback) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const img = new Image();
+            img.onload = function() {
+                let width = img.width;
+                let height = img.height;
+                if (width > maxWidth) {
+                    height = Math.round(height * maxWidth / width);
+                    width = maxWidth;
+                }
+                const canvas = document.createElement('canvas');
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+                canvas.toBlob(function(blob) {
+                    const resizedFile = new File([blob], file.name, {type: file.type});
+                    callback(resizedFile);
+                }, file.type, 0.85);
+            };
+            img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+    }
+
+    dropzone.addEventListener('click', function() {
+        fileInput.click();
+    });
+    dropzone.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        dropzone.classList.add('dragover');
+    });
+    dropzone.addEventListener('dragleave', function(e) {
+        dropzone.classList.remove('dragover');
+    });
+    dropzone.addEventListener('drop', function(e) {
+        e.preventDefault();
+        dropzone.classList.remove('dragover');
+        const file = e.dataTransfer.files[0];
+        if (file && file.type.startsWith('image/')) {
+            resizeImage(file, 800, function(resized) {
+                resizedImageFile = resized;
+                showPreview(resized);
+            });
+        }
+    });
+    fileInput.addEventListener('change', function(e) {
+        const file = fileInput.files[0];
+        if (file && file.type.startsWith('image/')) {
+            resizeImage(file, 800, function(resized) {
+                resizedImageFile = resized;
+                showPreview(resized);
+            });
+        }
+    });
+    // expose for saveEdit
+    window.getEditEvidenceImageFile = function() {
+        return resizedImageFile;
+    };
+});
+
+// Modal แนบรูปภาพหลักฐาน (เปิด modal และเตรียม context)
+window.handleAttachEvidenceImage = function(event, date, room) {
+    console.log('เปิด modal แนบรูป', {date, room});
+    event.stopPropagation();
+    event.preventDefault();
+    // เก็บ context ไว้ที่ window
+    window._evidenceContext = { date, room };
+    // รีเซ็ต modal
+    document.getElementById('evidence-image-input').value = '';
+    document.getElementById('evidence-preview').innerHTML = '';
+    document.getElementById('evidence-placeholder').style.display = '';
+    // เปิด modal
+    const modal = document.getElementById('evidence-modal');
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+}
+window.closeEvidenceModal = function() {
+    const modal = document.getElementById('evidence-modal');
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+    window._evidenceContext = null;
+}
+
+// ... existing code ...
+// หลัง renderHistoryTable เสร็จ ให้ bind event ปุ่มแนบรูป
+setTimeout(() => {
+    document.querySelectorAll('.attach-evidence-btn').forEach(btn => {
+        btn.onclick = function(e) {
+            const date = btn.getAttribute('data-date');
+            const room = btn.getAttribute('data-room');
+            window.handleAttachEvidenceImage(e, date, room);
+        };
+    });
+}, 0);
+// ... existing code ...
+
+// === Modal แนบรูปภาพหลักฐาน ===
+(function() {
+    let selectedFile = null;
+    const dropzone = document.getElementById('evidence-dropzone');
+    const fileInput = document.getElementById('evidence-image-input');
+    const preview = document.getElementById('evidence-preview');
+    const placeholder = document.getElementById('evidence-placeholder');
+    const saveBtn = document.getElementById('evidence-save-btn');
+    let uploading = false;
+
+    function showPreview(file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            preview.innerHTML = '';
+            const img = document.createElement('img');
+            img.src = e.target.result;
+            img.style.maxWidth = '80px';
+            img.style.maxHeight = '48px';
+            img.style.borderRadius = '8px';
+            preview.appendChild(img);
+            placeholder.style.display = 'none';
+        };
+        reader.readAsDataURL(file);
+    }
+    function resizeImage(file, maxWidth = 800, callback) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const img = new Image();
+            img.onload = function() {
+                let width = img.width;
+                let height = img.height;
+                if (width > maxWidth) {
+                    height = Math.round(height * maxWidth / width);
+                    width = maxWidth;
+                }
+                const canvas = document.createElement('canvas');
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+                canvas.toBlob(function(blob) {
+                    const resizedFile = new File([blob], file.name, {type: file.type});
+                    callback(resizedFile);
+                }, file.type, 0.85);
+            };
+            img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+    }
+    dropzone.addEventListener('click', function() {
+        fileInput.click();
+    });
+    dropzone.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        dropzone.classList.add('dragover');
+    });
+    dropzone.addEventListener('dragleave', function(e) {
+        dropzone.classList.remove('dragover');
+    });
+    dropzone.addEventListener('drop', function(e) {
+        e.preventDefault();
+        dropzone.classList.remove('dragover');
+        const file = e.dataTransfer.files[0];
+        if (file && file.type.startsWith('image/')) {
+            resizeImage(file, 800, function(resized) {
+                selectedFile = resized;
+                showPreview(resized);
+            });
+        }
+    });
+    fileInput.addEventListener('change', function(e) {
+        const file = fileInput.files[0];
+        if (file && file.type.startsWith('image/')) {
+            resizeImage(file, 800, function(resized) {
+                selectedFile = resized;
+                showPreview(resized);
+            });
+        }
+    });
+    saveBtn.onclick = async function() {
+        if (uploading) return;
+        if (!selectedFile) {
+            alert('กรุณาเลือกรูปภาพ');
+            return;
+        }
+        uploading = true;
+        saveBtn.textContent = 'กำลังอัปโหลด...';
+        try {
+            const {date, room} = window._evidenceContext || {};
+            if (!date || !room) throw new Error('ไม่พบข้อมูล context');
+            // อัปโหลดไป Discord Webhook
+            const webhookUrl = 'https://discord.com/api/webhooks/1383867565365006417/aZ4iIqTN6jHN-R3MizZyOAzsb7u6ObS_grxZ6rm-iXvj6zakXoYcQlx7kSLVxx6NvvWf';
+            
+            try {
+                console.log('เริ่มอัปโหลดรูป...');
+                console.log('ข้อมูล context:', {date, room});
+                
+                // สร้าง FormData สำหรับส่งไป Discord
+                const formData = new FormData();
+                formData.append('file', selectedFile, `${room}_${date.replace(/\//g,'-')}_${Date.now()}.jpg`);
+                console.log('สร้าง FormData สำเร็จ');
+                
+                // ส่งไฟล์ไป Discord ด้วย XMLHttpRequest
+                console.log('กำลังส่งไฟล์ไป Discord...');
+                const xhr = new XMLHttpRequest();
+                xhr.open('POST', webhookUrl, true);
+                
+                xhr.onload = async function() {
+                    if (xhr.status === 200) {
+                        console.log('อัปโหลดไป Discord สำเร็จ');
+                        const result = JSON.parse(xhr.responseText);
+                        console.log('Discord response:', result);
+                        
+                        const url = result.attachments[0].url;
+                        console.log('URL รูปภาพ:', url);
+                        
+                        // update URL ในบิล
+                        console.log('กำลังอัปเดต URL ในฐานข้อมูล...');
+                        const snapshot = await db.ref('electricityData').once('value');
+                        const data = snapshot.val();
+                        let keyToUpdate = null;
+                        for (const key in data) {
+                            if (data[key].date === date && data[key].room === room) {
+                                keyToUpdate = key;
+                                break;
+                            }
+                        }
+                        
+                        if (keyToUpdate) {
+                            console.log('พบ record ที่จะอัปเดต:', keyToUpdate);
+                            await db.ref(`electricityData/${keyToUpdate}/evidenceUrl`).set(url);
+                            console.log('อัปเดต URL สำเร็จ');
+                            
+                            // แสดงหน้าล่าสุด
+                            currentPage = 1;
+                            await renderHistoryTable();
+                            console.log('รีเฟรชตารางประวัติสำเร็จ');
+                            
+                            // รีเฟรชหน้า Home ถ้าอยู่ที่หน้า Home
+                            if (document.getElementById('room-cards')) {
+                                await renderRoomCards();
+                                console.log('รีเฟรชหน้า Home สำเร็จ');
+                            }
+                        } else {
+                            console.error('ไม่พบ record ที่จะอัปเดต');
+                        }
+                        
+                        closeEvidenceModal();
+                        console.log('อัปโหลดและอัปเดตข้อมูลเสร็จสมบูรณ์');
+                    } else {
+                        console.error('Discord response error:', xhr.status, xhr.statusText);
+                        throw new Error('อัปโหลดไม่สำเร็จ');
+                    }
+                    uploading = false;
+                    saveBtn.textContent = 'บันทึก';
+                };
+                
+                xhr.onerror = function() {
+                    console.error('เกิดข้อผิดพลาดในการส่งไฟล์');
+                    alert('เกิดข้อผิดพลาดในการอัปโหลด');
+                    uploading = false;
+                    saveBtn.textContent = 'บันทึก';
+                };
+                
+                xhr.send(formData);
+                
+            } catch (err) {
+                console.error('เกิดข้อผิดพลาด:', err);
+                alert('เกิดข้อผิดพลาดในการอัปโหลด: ' + err.message);
+                uploading = false;
+                saveBtn.textContent = 'บันทึก';
+            }
+        } catch (err) {
+            alert('เกิดข้อผิดพลาดในการอัปโหลด: ' + err.message);
+        }
+    };
+
+    // เพิ่มปุ่มถ่ายจากกล้อง (เฉพาะมือถือ)
+    let cameraBtn = document.getElementById('evidence-camera-btn');
+    if (!cameraBtn) {
+        cameraBtn = document.createElement('button');
+        cameraBtn.id = 'evidence-camera-btn';
+        cameraBtn.type = 'button';
+        cameraBtn.textContent = 'ถ่ายจากกล้อง';
+        cameraBtn.className = 'mt-2 px-4 py-2 bg-blue-500 text-white rounded-lg w-full font-medium shadow hover:bg-blue-600 transition';
+        // แทรกปุ่มนี้ไว้ใต้ dropzone
+        dropzone.parentNode.insertBefore(cameraBtn, dropzone.nextSibling);
+    }
+    // input สำหรับกล้อง (ซ่อนไว้)
+    let cameraInput = document.getElementById('evidence-camera-input');
+    if (!cameraInput) {
+        cameraInput = document.createElement('input');
+        cameraInput.type = 'file';
+        cameraInput.accept = 'image/*';
+        cameraInput.capture = 'environment';
+        cameraInput.id = 'evidence-camera-input';
+        cameraInput.style.display = 'none';
+        dropzone.parentNode.appendChild(cameraInput);
+    }
+    cameraBtn.onclick = function() {
+        cameraInput.click();
+    };
+    cameraInput.addEventListener('change', function(e) {
+        const file = cameraInput.files[0];
+        if (file && file.type.startsWith('image/')) {
+            resizeImage(file, 800, function(resized) {
+                selectedFile = resized;
+                showPreview(resized);
+            });
+        }
+    });
+})();
+// ... existing code ...
+// Hover preview รูปใหญ่
+(function() {
+    let previewDiv = null;
+    document.addEventListener('mouseover', function(e) {
+        const btn = e.target.closest('.attach-evidence-btn');
+        if (btn && btn.querySelector('img')) {
+            const img = btn.querySelector('img');
+            if (!previewDiv) {
+                previewDiv = document.createElement('div');
+                previewDiv.style.position = 'fixed';
+                previewDiv.style.zIndex = 9999;
+                previewDiv.style.pointerEvents = 'none';
+                previewDiv.style.border = '2px solid #3b82f6';
+                previewDiv.style.background = '#fff';
+                previewDiv.style.padding = '4px';
+                previewDiv.style.borderRadius = '10px';
+                previewDiv.style.boxShadow = '0 4px 16px rgba(30,41,59,0.18)';
+                previewDiv.style.transition = 'opacity 0.15s';
+                previewDiv.style.opacity = '0';
+                document.body.appendChild(previewDiv);
+            }
+            previewDiv.innerHTML = `<img src='${img.src}' style='max-width:220px;max-height:180px;border-radius:8px;'>`;
+            previewDiv.style.opacity = '1';
+            const rect = btn.getBoundingClientRect();
+            previewDiv.style.left = (rect.right + 12) + 'px';
+            previewDiv.style.top = (rect.top - 10) + 'px';
+        }
+    });
+    document.addEventListener('mouseout', function(e) {
+        if (previewDiv) previewDiv.style.opacity = '0';
+    });
+})();
+// ... existing code ...
+
+// === Overlay Preview Evidence Image ===
+(function() {
+    // สร้าง overlay modal ถ้ายังไม่มี
+    let overlay = document.getElementById('evidence-preview-overlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'evidence-preview-overlay';
+        overlay.style.position = 'fixed';
+        overlay.style.top = 0;
+        overlay.style.left = 0;
+        overlay.style.width = '100vw';
+        overlay.style.height = '100vh';
+        overlay.style.background = 'rgba(0,0,0,0.7)';
+        overlay.style.display = 'none';
+        overlay.style.alignItems = 'center';
+        overlay.style.justifyContent = 'center';
+        overlay.style.zIndex = 99999;
+        overlay.innerHTML = `
+            <div style="position:relative;display:flex;flex-direction:column;align-items:center;">
+                <button id="evidence-preview-close" style="position:absolute;top:-36px;right:0;background:#fff;border:none;border-radius:50%;width:36px;height:36px;font-size:22px;box-shadow:0 2px 8px #0004;cursor:pointer;">&times;</button>
+                <img id="evidence-preview-img" style="max-width: 80vw; max-height: 80vh; border-radius: 16px; box-shadow: 0 8px 32px #0008; background: #fff;" />
+            </div>
+        `;
+        document.body.appendChild(overlay);
+    }
+    const previewImg = overlay.querySelector('#evidence-preview-img');
+    const closeBtn = overlay.querySelector('#evidence-preview-close');
+    function showOverlay(src) {
+        previewImg.src = src;
+        overlay.style.display = 'flex';
+    }
+    function hideOverlay() {
+        overlay.style.display = 'none';
+        previewImg.src = '';
+    }
+    overlay.onclick = function(e) {
+        if (e.target === overlay) hideOverlay();
+    };
+    closeBtn.onclick = hideOverlay;
+
+    // เพิ่ม event delegation สำหรับปุ่มดูรูป
+    document.addEventListener('click', function(e) {
+        const btn = e.target.closest('.view-evidence-btn');
+        if (btn) {
+            const src = btn.getAttribute('data-src');
+            if (src) showOverlay(src);
+        }
+    });
+})();
+// ... existing code ...
