@@ -795,17 +795,9 @@ function showResultModalFromHistory(date) {
                 });
             };
 
-            // Generate PromptPay QR ตามจำนวนเงิน
-            setTimeout(() => {
+            // ฟังก์ชันรอให้ PromptPayQR โหลดเสร็จก่อน
+            waitForPromptPayQR(() => {
                 try {
-                    if (!window.PromptPayQR) {
-                        console.error('PromptPayQR library not loaded');
-                        return;
-                    }
-                    if (!window.QRious) {
-                        console.error('QRious library not loaded');
-                        return;
-                    }
                     const idOrPhone = '1209701792030';
                     const amount = Number(bill.total);
                     const canvas = document.getElementById('promptpay-qr-canvas');
@@ -822,7 +814,7 @@ function showResultModalFromHistory(date) {
                 } catch(e) {
                     console.error('เกิดข้อผิดพลาดในการสร้าง QR:', e);
                 }
-            }, 0);
+            });
         }
     });
 }
@@ -973,4 +965,13 @@ async function downloadResultAsImage() {
         btn.innerHTML = '<i class="fas fa-download"></i> ดาวน์โหลดรูปภาพ';
         btn.disabled = false;
     }, 1200);
+}
+
+// ฟังก์ชันรอให้ PromptPayQR โหลดเสร็จก่อน
+function waitForPromptPayQR(callback) {
+    if (window.PromptPayQR && window.QRious) {
+        callback();
+    } else {
+        setTimeout(() => waitForPromptPayQR(callback), 100);
+    }
 } 
