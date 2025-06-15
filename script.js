@@ -1324,4 +1324,17 @@ async function handleEditRoom(room) {
     } catch (err) {
         alert('เกิดข้อผิดพลาดในการแก้ไข: ' + err.message);
     }
-} 
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  // ... existing code ...
+  // ให้ overlay ของ result-modal คลิกปิด modal ได้
+  const resultModal = document.getElementById('result-modal');
+  if (resultModal) {
+    resultModal.addEventListener('click', function(e) {
+      if (e.target === resultModal) {
+        closeResultModal();
+      }
+    });
+  }
+});

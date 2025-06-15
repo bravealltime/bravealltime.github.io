@@ -470,4 +470,17 @@ tr:hover {
 
 #result-modal .text-green-400 {
     text-shadow: 0 0 10px rgba(52, 211, 153, 0.3);
+}
+
+/* ปรับ modal-content ให้เหมาะกับมือถือ */
+#result-modal > div {
+  max-height: 90vh;
+  overflow-y: auto;
+}
+@media (max-width: 600px) {
+  #result-modal > div {
+    width: 95vw !important;
+    padding: 1rem !important;
+    border-radius: 10px !important;
+  }
 } 
