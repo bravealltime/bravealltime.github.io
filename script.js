@@ -1183,6 +1183,16 @@ async function renderHomeRoomCards() {
             document.getElementById('home-room-cards').innerHTML = '<div class="col-span-full text-center text-gray-400">ไม่มีข้อมูลห้อง</div>';
             return;
         }
+        // เรียง rooms ตามเลขห้อง (room) น้อยไปมาก
+        rooms.sort((a, b) => {
+            // ถ้า room เป็นตัวเลข ให้เปรียบเทียบเป็นตัวเลข
+            const numA = isNaN(a.room) ? a.room : parseInt(a.room, 10);
+            const numB = isNaN(b.room) ? b.room : parseInt(b.room, 10);
+            if (typeof numA === 'number' && typeof numB === 'number') {
+                return numA - numB;
+            }
+            return String(numA).localeCompare(String(numB), 'th', {numeric: true});
+        });
         // สร้างการ์ดใหม่ให้อยู่ตรงกลางและดูดีขึ้น
         const cards = rooms.map(bill => `
             <div class="bg-slate-800 rounded-2xl shadow p-7 flex flex-col items-center border border-blue-900 w-full max-w-xs mx-auto relative">
@@ -1213,7 +1223,7 @@ async function renderHomeRoomCards() {
                 <button class="mt-auto px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-full font-bold w-full text-base shadow transition-all" onclick="viewRoomHistory('${bill.room}')">ดูประวัติ</button>
             </div>
         `).join('');
-        document.getElementById('home-room-cards').className = 'flex flex-wrap justify-center gap-8 p-8';
+        // ไม่ต้อง set className เป็น flex อีกแล้ว ให้ใช้ class grid จาก HTML
         document.getElementById('home-room-cards').innerHTML = cards;
     } catch (error) {
         document.getElementById('home-room-cards').innerHTML = '<div class="col-span-full text-center text-red-500">เกิดข้อผิดพลาดในการโหลดข้อมูลห้อง</div>';
