@@ -742,7 +742,10 @@ function updatePagination(totalItems) {
 async function changePage(page) {
     if (page < 1) return;
     currentPage = page;
-    await renderHistoryTable();
+    // ดึง room จาก query string
+    const params = new URLSearchParams(window.location.search);
+    const room = params.get('room');
+    await renderHistoryTable(null, 'date', room);
 }
 
 // ฟังก์ชันดึงค่าวัดไฟฟ้าล่าสุดจาก Firebase
