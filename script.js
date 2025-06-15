@@ -729,94 +729,101 @@ document.addEventListener('DOMContentLoaded', function() {
     fetchLatestReading();
 });
 
-// ปรับฟังก์ชันแสดงผลลัพธ์จากประวัติ ให้ค้นหาด้วย date
-function showResultModalFromHistory(date) {
-    loadFromFirebase().then(bills => {
-        const bill = bills.find(b => b.date === date);
-        if (bill) {
-            const modalContent = document.getElementById('result-modal-content');
-            modalContent.innerHTML = '';
-            modalContent.innerHTML = `
-                <div class="bg-white/90 rounded-2xl p-6 shadow-xl max-w-md mx-auto result-capture">
-                    <div class="result-capture-content px-6" style="overflow:visible;">
-                        <div class="text-center mb-4">
-                            <div class="text-2xl font-bold text-blue-800 mb-1">ผลการคำนวณค่าไฟ</div>
-                            <div class="text-base text-gray-500">วันที่ ${bill.date}</div>
-                        </div>
-                        <div class="divide-y divide-blue-100 mb-4">
-                            <div class="flex justify-between py-2">
-                                <span class="text-gray-600">ค่าวัดปัจจุบัน</span>
-                                <span class="font-bold text-blue-900">${bill.current} หน่วย</span>
-                            </div>
-                            <div class="flex justify-between py-2">
-                                <span class="text-gray-600">ค่าวัดครั้งที่แล้ว</span>
-                                <span class="font-bold text-blue-900">${bill.previous} หน่วย</span>
-                            </div>
-                            <div class="flex justify-between py-2">
-                                <span class="text-gray-600">จำนวนหน่วยที่ใช้</span>
-                                <span class="font-bold text-blue-900">${bill.units} หน่วย</span>
-                            </div>
-                            <div class="flex justify-between py-2">
-                                <span class="text-gray-600">อัตราค่าไฟต่อหน่วย</span>
-                                <span class="font-bold text-blue-900">${Number(bill.rate).toFixed(2)} บาท</span>
-                            </div>
-                        </div>
-                        <div class="bg-blue-50 rounded-xl p-4 text-center mb-4">
-                            <div class="text-lg font-semibold text-blue-700">ค่าไฟทั้งหมด</div>
-                            <div class="text-3xl font-bold text-blue-900">฿${Number(bill.total).toLocaleString()}</div>
-                            <div class="text-base text-blue-700">(${bill.units} หน่วย หน่วยละ ${Number(bill.rate).toFixed(2)} บาท)</div>
-                        </div>
-                        <div class="bg-gray-100 rounded-xl p-3 text-center text-base text-gray-700 mb-4" id="summary-line">
-                            ${generateSummaryLine(bill)}
-                        </div>
-                        <div class="flex flex-col items-center my-4">
-                            <canvas id="promptpay-qr-canvas" width="224" height="224" class="rounded-xl shadow mb-2"></canvas>
-                            <div class="text-sm text-gray-600">สแกนเพื่อชำระเงินค่าไฟ</div>
-                        </div>
+// ฟังก์ชันแสดงผลการคำนวณ
+function showCalculationResult() {
+    const current = parseFloat(document.getElementById('current-reading').value);
+    const previous = parseFloat(document.getElementById('previous-reading').value);
+    const rate = parseFloat(document.getElementById('rate').value);
+    const totalAll = parseFloat(document.getElementById('total-all').value);
+
+    if (isNaN(current) || isNaN(previous) || isNaN(rate)) {
+        alert('กรุณากรอกข้อมูลให้ครบถ้วน');
+        return;
+    }
+
+    const units = current - previous;
+    if (units < 0) {
+        alert('ค่าวัดปัจจุบันต้องมากกว่าค่าวัดครั้งที่แล้ว');
+        return;
+    }
+
+    const total = units * rate;
+    const date = document.getElementById('bill-date').value;
+    const formattedDate = formatDate(new Date(date));
+
+    const modalContent = document.getElementById('result-modal-content');
+    modalContent.innerHTML = `
+        <div class="bg-white/90 rounded-2xl p-6 shadow-xl max-w-md mx-auto result-capture">
+            <div class="result-capture-content px-6" style="overflow:visible;">
+                <div class="text-center mb-4">
+                    <div class="text-2xl font-bold text-blue-800 mb-1">ผลการคำนวณค่าไฟ</div>
+                    <div class="text-base text-gray-500">วันที่ ${formattedDate}</div>
+                </div>
+                <div class="divide-y divide-blue-100 mb-4">
+                    <div class="flex justify-between py-2">
+                        <span class="text-gray-600">ค่าวัดปัจจุบัน</span>
+                        <span class="font-bold text-blue-900">${current} หน่วย</span>
                     </div>
-                    <div class="flex justify-end gap-2">
-                        <button id="copy-image-btn" onclick="copyResultAsImage()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2">
-                            <i class="fas fa-copy"></i> <span>คัดลอก</span>
-                        </button>
-                        <button id="download-image-btn" onclick="downloadResultAsImage()" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center gap-2">
-                            <i class="fas fa-download"></i> ดาวน์โหลดรูปภาพ
-                        </button>
+                    <div class="flex justify-between py-2">
+                        <span class="text-gray-600">ค่าวัดครั้งที่แล้ว</span>
+                        <span class="font-bold text-blue-900">${previous} หน่วย</span>
+                    </div>
+                    <div class="flex justify-between py-2">
+                        <span class="text-gray-600">จำนวนหน่วยที่ใช้</span>
+                        <span class="font-bold text-blue-900">${units} หน่วย</span>
+                    </div>
+                    <div class="flex justify-between py-2">
+                        <span class="text-gray-600">อัตราค่าไฟต่อหน่วย</span>
+                        <span class="font-bold text-blue-900">${rate.toFixed(2)} บาท</span>
                     </div>
                 </div>
-            `;
-            document.getElementById('result-modal').classList.remove('hidden');
-            document.getElementById('result-modal').classList.add('flex');
+                <div class="bg-blue-50 rounded-xl p-4 text-center mb-4">
+                    <div class="text-lg font-semibold text-blue-700">ค่าไฟทั้งหมด</div>
+                    <div class="text-3xl font-bold text-blue-900">฿${total.toLocaleString()}</div>
+                    <div class="text-base text-blue-700">(${units} หน่วย หน่วยละ ${rate.toFixed(2)} บาท)</div>
+                </div>
+                <div class="bg-gray-100 rounded-xl p-3 text-center text-base text-gray-700 mb-4" id="summary-line">
+                    ${generateSummaryLine({date: formattedDate, total, units, rate})}
+                </div>
+                <div class="flex flex-col items-center my-4">
+                    <canvas id="promptpay-qr-canvas" width="224" height="224" class="rounded-xl shadow mb-2"></canvas>
+                    <div class="text-sm text-gray-600">สแกนเพื่อชำระเงินค่าไฟ</div>
+                </div>
+            </div>
+            <div class="flex justify-end gap-2">
+                <button id="copy-image-btn" onclick="copyResultAsImage()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2">
+                    <i class="fas fa-copy"></i> <span>คัดลอก</span>
+                </button>
+                <button id="download-image-btn" onclick="downloadResultAsImage()" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center gap-2">
+                    <i class="fas fa-download"></i> ดาวน์โหลดรูปภาพ
+                </button>
+            </div>
+        </div>
+    `;
 
-            // เพิ่ม event สำหรับปุ่มคัดลอกผลลัพธ์
-            document.getElementById('copy-image-btn').onclick = function() {
-                const summary = document.getElementById('summary-line').innerText;
-                navigator.clipboard.writeText(summary).then(() => {
-                    alert('คัดลอกผลลัพธ์แล้ว! ไปวางใน LINE ได้เลย');
-                });
-            };
+    document.getElementById('result-modal').classList.remove('hidden');
+    document.getElementById('result-modal').classList.add('flex');
 
-            // ฟังก์ชันรอให้ PromptPayQR โหลดเสร็จก่อน
-            waitForPromptPayQR(() => {
-                try {
-                    const idOrPhone = '1209701792030';
-                    const amount = Number(bill.total);
-                    const canvas = document.getElementById('promptpay-qr-canvas');
-                    if (!canvas) {
-                        console.error('ไม่พบ element promptpay-qr-canvas');
-                        return;
-                    }
-                    const payload = window.PromptPayQR.generatePayload(idOrPhone, { amount });
-                    new window.QRious({
-                        element: canvas,
-                        value: payload,
-                        size: 224
-                    });
-                } catch(e) {
-                    console.error('เกิดข้อผิดพลาดในการสร้าง QR:', e);
-                }
-            });
+    // สร้าง QR Code
+    try {
+        const idOrPhone = '1209701792030';
+        const amount = Number(bill.total);
+        const canvas = document.getElementById('promptpay-qr-canvas');
+        if (!canvas) {
+            console.error('ไม่พบ element promptpay-qr-canvas');
+            return;
         }
-    });
+        // สร้าง QR Code ด้วย promptpay.js
+        const qrcodeImg = ThaiQRCode.generate(idOrPhone, { amount: amount });
+        const img = new Image();
+        img.src = qrcodeImg;
+        img.onload = () => {
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, 224, 224);
+        };
+    } catch(e) {
+        console.error('เกิดข้อผิดพลาดในการสร้าง QR:', e);
+    }
 }
 
 // ฟังก์ชันสร้างข้อความสรุปแบบสั้น
@@ -974,4 +981,93 @@ function waitForPromptPayQR(callback) {
     } else {
         setTimeout(() => waitForPromptPayQR(callback), 100);
     }
+}
+
+// ฟังก์ชันแสดงผลลัพธ์จากประวัติ
+function showResultModalFromHistory(date) {
+    loadFromFirebase().then(bills => {
+        const bill = bills.find(b => b.date === date);
+        if (bill) {
+            const modalContent = document.getElementById('result-modal-content');
+            modalContent.innerHTML = `
+                <div class="bg-white/90 rounded-2xl p-6 shadow-xl max-w-md mx-auto result-capture">
+                    <div class="result-capture-content px-6" style="overflow:visible;">
+                        <div class="text-center mb-4">
+                            <div class="text-2xl font-bold text-blue-800 mb-1">ผลการคำนวณค่าไฟ</div>
+                            <div class="text-base text-gray-500">วันที่ ${bill.date}</div>
+                        </div>
+                        <div class="divide-y divide-blue-100 mb-4">
+                            <div class="flex justify-between py-2">
+                                <span class="text-gray-600">ค่าวัดปัจจุบัน</span>
+                                <span class="font-bold text-blue-900">${bill.current} หน่วย</span>
+                            </div>
+                            <div class="flex justify-between py-2">
+                                <span class="text-gray-600">ค่าวัดครั้งที่แล้ว</span>
+                                <span class="font-bold text-blue-900">${bill.previous} หน่วย</span>
+                            </div>
+                            <div class="flex justify-between py-2">
+                                <span class="text-gray-600">จำนวนหน่วยที่ใช้</span>
+                                <span class="font-bold text-blue-900">${bill.units} หน่วย</span>
+                            </div>
+                            <div class="flex justify-between py-2">
+                                <span class="text-gray-600">อัตราค่าไฟต่อหน่วย</span>
+                                <span class="font-bold text-blue-900">${Number(bill.rate).toFixed(2)} บาท</span>
+                            </div>
+                        </div>
+                        <div class="bg-blue-50 rounded-xl p-4 text-center mb-4">
+                            <div class="text-lg font-semibold text-blue-700">ค่าไฟทั้งหมด</div>
+                            <div class="text-3xl font-bold text-blue-900">฿${Number(bill.total).toLocaleString()}</div>
+                            <div class="text-base text-blue-700">(${bill.units} หน่วย หน่วยละ ${Number(bill.rate).toFixed(2)} บาท)</div>
+                        </div>
+                        <div class="bg-gray-100 rounded-xl p-3 text-center text-base text-gray-700 mb-4" id="summary-line">
+                            ${generateSummaryLine(bill)}
+                        </div>
+                        <div class="flex flex-col items-center my-4">
+                            <canvas id="promptpay-qr-canvas" width="224" height="224" class="rounded-xl shadow mb-2"></canvas>
+                            <div class="text-sm text-gray-600">สแกนเพื่อชำระเงินค่าไฟ</div>
+                        </div>
+                    </div>
+                    <div class="flex justify-end gap-2">
+                        <button id="copy-image-btn" onclick="copyResultAsImage()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2">
+                            <i class="fas fa-copy"></i> <span>คัดลอก</span>
+                        </button>
+                        <button id="download-image-btn" onclick="downloadResultAsImage()" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center gap-2">
+                            <i class="fas fa-download"></i> ดาวน์โหลดรูปภาพ
+                        </button>
+                    </div>
+                </div>
+            `;
+            document.getElementById('result-modal').classList.remove('hidden');
+            document.getElementById('result-modal').classList.add('flex');
+
+            // เพิ่ม event สำหรับปุ่มคัดลอกผลลัพธ์
+            document.getElementById('copy-image-btn').onclick = function() {
+                const summary = document.getElementById('summary-line').innerText;
+                navigator.clipboard.writeText(summary).then(() => {
+                    alert('คัดลอกผลลัพธ์แล้ว! ไปวางใน LINE ได้เลย');
+                });
+            };
+
+            // สร้าง QR Code
+            try {
+                const idOrPhone = '1209701792030';
+                const amount = Number(bill.total);
+                const canvas = document.getElementById('promptpay-qr-canvas');
+                if (!canvas) {
+                    console.error('ไม่พบ element promptpay-qr-canvas');
+                    return;
+                }
+                // สร้าง QR Code ด้วย promptpay.js
+                const qrcodeImg = ThaiQRCode.generate(idOrPhone, { amount: amount });
+                const img = new Image();
+                img.src = qrcodeImg;
+                img.onload = () => {
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, 224, 224);
+                };
+            } catch(e) {
+                console.error('เกิดข้อผิดพลาดในการสร้าง QR:', e);
+            }
+        }
+    });
 } 
