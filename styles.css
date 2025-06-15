@@ -472,32 +472,109 @@ tr:hover {
     text-shadow: 0 0 10px rgba(52, 211, 153, 0.3);
 }
 
-/* ปรับ modal-content ให้เหมาะกับมือถือ (เพิ่มเติม) */
+/* Modal ผลการคำนวณแบบมืออาชีพ */
 #result-modal > div {
-  margin-top: 5vh;
-  margin-bottom: 5vh;
-  background: rgba(30, 41, 59, 0.95) !important;
-  border-radius: 18px;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+  background: rgba(255,255,255,0.97) !important;
+  color: #1e293b !important;
+  border-radius: 22px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+  max-width: 420px;
+  padding: 1.2rem 1.2rem 1.5rem 1.2rem !important;
+  margin: 4vh auto;
 }
 #result-modal-content > div {
   display: flex;
   flex-direction: column;
-  gap: 1.2rem;
+  gap: 1.3rem;
+}
+#result-modal-content h2, #result-modal-content .text-2xl, #result-modal-content .text-3xl {
+  color: #2563eb !important;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+#result-modal-content .text-lg, #result-modal-content .text-base {
+  color: #334155 !important;
+}
+#result-modal-content .text-green-400, #result-modal-content .text-blue-900 {
+  color: #059669 !important;
+  font-size: 1.5rem !important;
+  font-weight: 700;
+}
+#result-modal-content .bg-blue-50, #result-modal-content .bg-gray-100, #result-modal-content .bg-white\/10 {
+  background: rgba(30,41,59,0.07) !important;
+  border-radius: 14px;
+  padding: 1rem 0.7rem;
+  margin-bottom: 0.5rem;
+}
+#promptpay-qr-canvas {
+  display: block;
+  margin: 1.2rem auto 0.5rem auto;
+  border-radius: 12px;
+  box-shadow: 0 2px 12px rgba(30,41,59,0.10);
+}
+#result-modal-content .text-center {
+  text-align: center !important;
+}
+#result-modal-content .flex {
+  gap: 0.7rem;
+}
+#result-modal-content .font-bold {
+  font-weight: 700 !important;
+}
+#result-modal-content .mb-4 {
+  margin-bottom: 1.1rem !important;
+}
+#result-modal-content .mb-2 {
+  margin-bottom: 0.7rem !important;
+}
+#result-modal-content .my-4 {
+  margin: 1.1rem 0 !important;
+}
+#result-modal-content .rounded-xl {
+  border-radius: 14px !important;
+}
+#result-modal-content .divide-y > div {
+  padding: 0.4rem 0;
+}
+#result-modal-content .text-sm {
+  font-size: 0.98rem !important;
+}
+#result-modal-content .text-base {
+  font-size: 1.08rem !important;
+}
+#result-modal-content .text-2xl {
+  font-size: 1.45rem !important;
+}
+#result-modal-content .text-3xl {
+  font-size: 2.1rem !important;
+}
+#result-modal-content .bg-success {
+  background: #e0f7ef !important;
+  color: #059669 !important;
+}
+#result-modal button, #result-modal .close {
+  font-size: 1.7rem !important;
+  color: #64748b !important;
+  top: 0.7rem;
+  right: 0.7rem;
+  position: absolute;
+  background: none;
+  border: none;
+  z-index: 10;
 }
 @media (max-width: 600px) {
   #result-modal > div {
-    width: 97vw !important;
-    padding: 0.7rem !important;
+    width: 99vw !important;
+    padding: 0.5rem 0.2rem 1rem 0.2rem !important;
     border-radius: 14px !important;
-    margin-top: 2vh;
-    margin-bottom: 2vh;
+    margin: 1.5vh auto;
+    max-width: 99vw;
   }
   #result-modal-content {
-    font-size: 0.98rem;
+    font-size: 0.97rem;
   }
-  #result-modal-content h2, #result-modal-content .text-2xl, #result-modal-content .text-3xl {
-    font-size: 1.1rem !important;
+  #result-modal-content .text-2xl, #result-modal-content .text-3xl {
+    font-size: 1.15rem !important;
   }
   #result-modal-content .text-lg {
     font-size: 1rem !important;
@@ -506,10 +583,10 @@ tr:hover {
     font-size: 0.95rem !important;
   }
   #promptpay-qr-canvas {
-    width: 160px !important;
-    height: 160px !important;
+    width: 140px !important;
+    height: 140px !important;
     max-width: 90vw;
-    margin: 0 auto;
+    margin: 0.7rem auto 0.3rem auto;
     display: block;
   }
 } 
