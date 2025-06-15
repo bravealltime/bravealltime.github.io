@@ -330,6 +330,9 @@ const initialData = [
     }
 ];
 
+// เพิ่มบรรทัดนี้ไว้ด้านบนสุดของไฟล์
+let electricityData = [];
+
 // Function to fetch data from Google Sheets
 async function fetchSheetData() {
     try {
