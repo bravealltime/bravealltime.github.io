@@ -8,6 +8,50 @@
     <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-analytics-compat.js"></script>
+    <script>
+        // Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyC2DvQt-VXfeEeip9thWXLKnstHmyx_eOk",
+            authDomain: "electricity-bill-calcula-ea4a2.firebaseapp.com",
+            databaseURL: "https://electricity-bill-calcula-ea4a2-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "electricity-bill-calcula-ea4a2",
+            storageBucket: "electricity-bill-calcula-ea4a2.firebasestorage.app",
+            messagingSenderId: "79440126022",
+            appId: "1:79440126022:web:7ffbc16c6661bc75dc6a47",
+            measurementId: "G-7JD6H3Q0PM"
+        };
+
+        // Declare db variable in global scope
+        let db;
+        let analytics;
+
+        // Initialize Firebase with error handling
+        try {
+            // Check if Firebase is already initialized
+            if (!firebase.apps.length) {
+                const app = firebase.initializeApp(firebaseConfig);
+                analytics = firebase.analytics(app);
+            }
+            db = firebase.database();
+            
+            // Test Firebase connection
+            db.ref('.info/connected').on('value', (snap) => {
+                if (snap.val() === true) {
+                    console.log('Firebase connected successfully');
+                } else {
+                    console.log('Firebase disconnected');
+                }
+            });
+
+            console.log('Firebase initialized successfully');
+        } catch (error) {
+            console.error('Firebase initialization error:', error);
+        }
+    </script>
     <script>
         tailwind.config = {
             theme: {
@@ -211,6 +255,7 @@
     </div>
 
     <script src="script.js"></script>
+    <script src="sheets.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script>
     flatpickr("#bill-date", {

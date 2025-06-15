@@ -89,56 +89,83 @@ function displayHistory(page = 1) {
 }
 
 // ฟังก์ชันสำหรับแสดงตารางประวัติ
-function renderHistoryTable(data, page = 1) {
-    const historyBody = document.getElementById('history-body');
-    historyBody.innerHTML = '';
-    const start = (page - 1) * ITEMS_PER_PAGE;
-    const end = start + ITEMS_PER_PAGE;
-    const pageData = data.slice(start, end);
-    pageData.forEach((data, index) => {
-        const row = document.createElement('tr');
-        row.className = 'border-b border-white/10 hover:bg-white/5 transition-all duration-200';
-        
-        // แปลงวันที่ให้ถูกต้อง
-        let displayDate = data.date;
-        if (displayDate.includes('undefined')) {
-            // ถ้ามี undefined ให้ใช้ค่าวันที่ที่ถูกต้อง
-            const [day, month, year] = data.date.split('/').filter(part => part !== 'undefined');
-            displayDate = `${day}/${month}/${year}`;
+async function renderHistoryTable(data = null, sortBy = 'date') {
+    try {
+        // If no data is provided, fetch from Firebase
+        if (!data) {
+            console.log('Fetching data from Firebase...');
+            const snapshot = await db.ref('electricityData').once('value');
+            data = snapshot.val();
+            console.log('Data fetched from Firebase:', data);
         }
 
-        row.innerHTML = `
-            <td class="py-3 px-4 text-center text-sm text-white/80 font-medium">${displayDate}</td>
-            <td class="py-3 px-4 text-center text-sm text-white/80">${data.current.toLocaleString()}</td>
-            <td class="py-3 px-4 text-center text-sm text-white/80">${data.previous.toLocaleString()}</td>
-            <td class="py-3 px-4 text-center text-sm text-white/80">${data.units.toLocaleString()}</td>
-            <td class="py-3 px-4 text-center text-sm text-white/80">${data.rate.toFixed(2)}</td>
-            <td class="py-3 px-4 text-center text-sm font-semibold text-white">฿${data.total.toLocaleString()}</td>
-            <td class="py-3 px-4 text-center text-sm font-semibold text-white">${data.totalAll ? '฿'+data.totalAll.toLocaleString() : '-'}</td>
-            <td class="py-3 px-4 text-center text-sm">
-                <div class="flex justify-center gap-2">
-                    <button type="button" class="result-btn px-3 py-1.5 bg-green-500/20 hover:bg-green-500/30 text-green-400 rounded-lg transition-all duration-200 flex items-center gap-1.5">
-                        <i class="fas fa-calculator text-sm"></i>
-                    </button>
-                    <button class="edit-btn px-3 py-1.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 rounded-lg transition-all duration-200 flex items-center gap-1.5" onclick="openEditModal(${start + index})">
-                        <i class="fas fa-edit text-sm"></i>
-                    </button>
-                    <button class="delete-btn px-3 py-1.5 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg transition-all duration-200 flex items-center gap-1.5" onclick="deleteRecord(${start + index})">
-                        <i class="fas fa-trash text-sm"></i>
-                    </button>
-                </div>
-            </td>
-        `;
-        historyBody.appendChild(row);
-        // ป้องกัน error
-        const resultBtn = row.querySelector('.result-btn');
-        if (resultBtn) {
-            resultBtn.addEventListener('click', () => showCalculationResult(data));
+        // Convert object to array if needed
+        if (data && typeof data === 'object' && !Array.isArray(data)) {
+            data = Object.values(data);
         }
-    });
+
+        // Validate data
+        if (!data || !Array.isArray(data) || data.length === 0) {
+            console.warn('No valid data to display');
+            document.getElementById('history-body').innerHTML = '';
+            document.getElementById('no-history').classList.remove('hidden');
+            return;
+        }
+
+        // Sort data based on sortBy parameter
+        data.sort((a, b) => {
+            if (sortBy === 'date') {
+                // Sort by date (newest to oldest)
+                const dateA = new Date(a.date.split('/').reverse().join('-'));
+                const dateB = new Date(b.date.split('/').reverse().join('-'));
+                return dateB - dateA;
+            } else if (sortBy === 'amount') {
+                // Sort by total amount (highest to lowest)
+                const amountA = parseFloat(a.totalAll) || 0;
+                const amountB = parseFloat(b.totalAll) || 0;
+                return amountB - amountA;
+            }
+            return 0;
+        });
+
+        // Generate table rows
+        const rows = data.map(bill => `
+            <tr class="hover:bg-white/5 transition-colors">
+                <td class="py-3 px-3 text-center">${bill.date || ''}</td>
+                <td class="py-3 px-3 text-center">${bill.current || ''}</td>
+                <td class="py-3 px-3 text-center">${bill.previous || ''}</td>
+                <td class="py-3 px-3 text-center">${bill.units || ''}</td>
+                <td class="py-3 px-3 text-center">${bill.rate ? bill.rate.toFixed(2) : ''}</td>
+                <td class="py-3 px-3 text-center">${bill.total ? bill.total.toFixed(2) : ''}</td>
+                <td class="py-3 px-3 text-center">${bill.totalAll ? bill.totalAll.toFixed(2) : ''}</td>
+                <td class="py-3 px-3 text-center">
+                    <div class="flex justify-center gap-2">
+                        <button onclick="editBill('${bill.date}')" class="text-secondary hover:text-secondary/80 transition-colors">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        <button onclick="deleteBill('${bill.date}')" class="text-accent hover:text-accent/80 transition-colors">
+                            <i class="fas fa-trash-alt"></i>
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        `).join('');
+
+        // Update table
+        document.getElementById('history-body').innerHTML = rows;
+        document.getElementById('no-history').classList.add('hidden');
+
+        // Update pagination
+        updatePagination(data);
+
+    } catch (error) {
+        console.error('Error rendering history table:', error);
+        document.getElementById('history-body').innerHTML = '';
+        document.getElementById('no-history').classList.remove('hidden');
+    }
 }
 
-// ดึงค่าไฟครั้งที่แล้วจากข้อมูลล่าสุด
+// ฟังก์ชันดึงค่าไฟครั้งที่แล้วจากข้อมูลล่าสุด
 function getLastReading() {
     if (electricityData.length > 0) {
         // เรียงข้อมูลตามวันที่และดึงค่าล่าสุด
@@ -156,17 +183,46 @@ function updatePreviousReading() {
     document.getElementById('previous-reading').value = previousReading;
 }
 
-// ฟังก์ชันสำหรับบันทึกข้อมูลลง localStorage
-function saveToLocalStorage() {
-    localStorage.setItem('electricityData', JSON.stringify(electricityData));
+// ฟังก์ชันบันทึกข้อมูลลง Firebase
+async function saveToFirebase(data) {
+    try {
+        const billsRef = db.ref('bills');
+        const newBillRef = billsRef.push();
+        await newBillRef.set({
+            ...data,
+            timestamp: Date.now()
+        });
+        console.log('บันทึกข้อมูลสำเร็จ:', data);
+    } catch (error) {
+        console.error('เกิดข้อผิดพลาดในการบันทึกข้อมูล:', error);
+        throw error; // ส่ง error ไปให้ฟังก์ชันที่เรียกใช้จัดการ
+    }
 }
 
-// ฟังก์ชันสำหรับโหลดข้อมูลจาก localStorage
-function loadFromLocalStorage() {
-    const savedData = localStorage.getItem('electricityData');
-    if (savedData) {
-        electricityData.length = 0; // ล้างข้อมูลเดิม
-        electricityData.push(...JSON.parse(savedData));
+// ฟังก์ชันดึงข้อมูลจาก Firebase
+async function loadFromFirebase() {
+    try {
+        const snapshot = await db.ref('bills').once('value');
+        const bills = [];
+        snapshot.forEach(doc => {
+            const data = doc.val();
+            bills.push({
+                id: doc.key,
+                date: data.date,
+                currentReading: data.currentReading,
+                previousReading: data.previousReading,
+                unitsUsed: data.unitsUsed,
+                ratePerUnit: data.ratePerUnit,
+                totalBill: data.totalBill,
+                totalAll: data.totalAll,
+                timestamp: data.timestamp
+            });
+        });
+        // เรียงจากใหม่ไปเก่า
+        return bills.sort((a, b) => b.timestamp - a.timestamp);
+    } catch (error) {
+        console.error('เกิดข้อผิดพลาดในการดึงข้อมูล:', error);
+        return [];
     }
 }
 
@@ -180,84 +236,62 @@ function getThaiMonth(date) {
     return months[parseInt(month) - 1];
 }
 
-// คำนวณค่าไฟ
-function calculateBill() {
-    let billDate = document.getElementById('bill-date').value.trim();
-    let formattedDate = '';
-    if (/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(billDate)) {
-        // กรณี YYYY-MM-DD
-        const [year, month, day] = billDate.split('-');
-        formattedDate = `${day}/${month}/${year}`;
-    } else if (/^[0-9]{2}\/[0-9]{2}\/[0-9]{4}$/.test(billDate)) {
-        // กรณี DD/MM/YYYY
-        formattedDate = billDate;
-    } else {
-        alert('กรุณากรอกวันที่ในรูปแบบที่ถูกต้อง (DD/MM/YYYY หรือ YYYY-MM-DD)');
-        return;
+// ฟังก์ชันสำหรับคำนวณค่าไฟ
+async function calculateBill() {
+    try {
+        const date = document.getElementById('bill-date').value;
+        const current = parseFloat(document.getElementById('current-reading').value);
+        const previous = parseFloat(document.getElementById('previous-reading').value);
+        const rate = parseFloat(document.getElementById('rate').value);
+        const totalAll = parseFloat(document.getElementById('total-all').value);
+
+        if (!date || isNaN(current) || isNaN(previous) || isNaN(rate)) {
+            alert('กรุณากรอกข้อมูลให้ครบถ้วน');
+            return;
+        }
+
+        if (current < previous) {
+            alert('ค่าวัดปัจจุบันต้องมากกว่าค่าวัดครั้งที่แล้ว');
+            return;
+        }
+
+        const units = current - previous;
+        const total = units * rate;
+
+        // บันทึกข้อมูลลง Firebase
+        const billData = {
+            date: date,
+            current: current,
+            previous: previous,
+            units: units,
+            rate: rate,
+            total: total,
+            totalAll: totalAll || 0
+        };
+
+        await db.ref('electricityData').push(billData);
+        
+        // แสดงผลการคำนวณ
+        document.getElementById('units-used').textContent = units.toFixed(2);
+        document.getElementById('rate-per-unit').textContent = rate.toFixed(2);
+        document.getElementById('total-bill').textContent = total.toFixed(2);
+        
+        // รีเซ็ตฟอร์ม
+        document.getElementById('current-reading').value = '';
+        document.getElementById('rate').value = '0';
+        document.getElementById('total-all').value = '';
+        
+        // ดึงค่าวัดล่าสุดมาใส่ในค่าวัดครั้งที่แล้ว
+        await fetchLatestReading();
+        
+        // รีเฟรชตาราง
+        renderHistoryTable();
+        
+        alert('บันทึกข้อมูลสำเร็จ');
+    } catch (error) {
+        console.error('Error calculating bill:', error);
+        alert('เกิดข้อผิดพลาดในการคำนวณ: ' + error.message);
     }
-    const currentReading = parseFloat(document.getElementById('current-reading').value);
-    const previousReading = getLastReading();
-    const rate = parseFloat(document.getElementById('rate').value);
-    const totalAll = parseFloat(document.getElementById('total-all').value);
-
-    if (!formattedDate || isNaN(currentReading) || isNaN(rate)) {
-        alert('กรุณากรอกข้อมูลให้ครบทุกช่อง');
-        return;
-    }
-
-    if (currentReading < previousReading) {
-        alert('ค่าวัดปัจจุบันต้องมากกว่าค่าวัดครั้งที่แล้ว');
-        return;
-    }
-
-    const unitsUsed = currentReading - previousReading;
-    const totalBill = unitsUsed * rate;
-
-    // สร้างข้อความผลการคำนวณ
-    const thaiMonth = getThaiMonth(formattedDate);
-    const year = parseInt(formattedDate.split('/')[2]) + 543;
-    const resultText = `ค่าไฟของป้านาดเดือน${thaiMonth} ${year} ฿${totalBill.toLocaleString()} บาท ${unitsUsed.toLocaleString()} หน่วย หน่วยละ ${rate.toFixed(2)} บาท`;
-
-    // แสดงผลการคำนวณ
-    const resultSection = document.getElementById('result-section');
-    resultSection.innerHTML = `
-        <div class="text-center">
-            <h2 class="text-xl font-semibold mb-4">ผลการคำนวณ</h2>
-            <p class="text-lg">${resultText}</p>
-        </div>
-    `;
-    
-    // แสดงผลลัพธ์ด้วย animation
-    resultSection.style.display = 'block';
-    resultSection.style.opacity = '0';
-    resultSection.style.transform = 'translateY(10px)';
-    setTimeout(() => {
-        resultSection.style.opacity = '1';
-        resultSection.style.transform = 'translateY(0)';
-    }, 100);
-
-    // เพิ่มข้อมูลลงในประวัติ
-    const newData = {
-        date: formattedDate,
-        current: currentReading,
-        previous: previousReading,
-        units: unitsUsed,
-        rate: rate,
-        total: totalBill,
-        totalAll: !isNaN(totalAll) ? totalAll : undefined
-    };
-    electricityData.unshift(newData);
-    
-    // บันทึกข้อมูลลง localStorage
-    saveToLocalStorage();
-    
-    // อัปเดตค่าวัดไฟครั้งที่แล้ว
-    updatePreviousReading();
-    
-    // ล้างค่าในช่องค่าวัดปัจจุบัน
-    document.getElementById('current-reading').value = '';
-    
-    displayHistory();
 }
 
 // เปิด Modal สำหรับแก้ไขข้อมูล
@@ -280,233 +314,118 @@ function openEditModal(index) {
     modal.classList.add('flex');
 }
 
-// ปิด Modal
-function closeModal() {
-    const modal = document.getElementById('edit-modal');
-    modal.classList.add('hidden');
-    modal.classList.remove('flex');
-}
-
-// บันทึกการแก้ไขข้อมูล
-function saveEdit() {
-    const date = document.getElementById('edit-date').value;
-    const current = parseFloat(document.getElementById('edit-current').value);
-    const previous = parseFloat(document.getElementById('edit-previous').value);
-    const rate = parseFloat(document.getElementById('edit-rate').value);
-    const totalAll = parseFloat(document.getElementById('edit-total-all').value);
-
-    if (!date || isNaN(current) || isNaN(previous) || isNaN(rate)) {
-        alert('กรุณากรอกข้อมูลให้ครบทุกช่อง');
-        return;
-    }
-
-    if (current < previous) {
-        alert('ค่าวัดปัจจุบันต้องมากกว่าค่าวัดครั้งที่แล้ว');
-        return;
-    }
-
-    const units = current - previous;
-    const total = units * rate;
-
-    // แปลงวันที่จาก YYYY-MM-DD เป็น DD/MM/YYYY
-    const [year, month, day] = date.split('-');
-    const formattedDate = `${day}/${month}/${year}`;
-
-    electricityData[editingIndex] = {
-        date: formattedDate,
-        current: current,
-        previous: previous,
-        units: units,
-        rate: rate,
-        total: total,
-        totalAll: !isNaN(totalAll) ? totalAll : undefined
-    };
-    
-    // บันทึกข้อมูลลง localStorage
-    saveToLocalStorage();
-    
-    // อัปเดตค่าวัดไฟครั้งที่แล้ว
-    updatePreviousReading();
-    
-    closeModal();
-    displayHistory(currentPage);
-}
-
-// ลบข้อมูล
-function deleteRecord(index) {
-    if (confirm('คุณต้องการลบข้อมูลนี้ใช่หรือไม่?')) {
-        electricityData.splice(index, 1);
-        // บันทึกข้อมูลลง localStorage
-        saveToLocalStorage();
-        // อัปเดตค่าวัดไฟครั้งที่แล้ว
-        updatePreviousReading();
-        displayHistory(currentPage);
-    }
-}
-
-// เพิ่มฟังก์ชันสำหรับการเรียงลำดับ
-function sortHistory(type) {
-    const dateBtn = document.querySelector('button[onclick="sortHistory(\'date\')"]');
-    const amountBtn = document.querySelector('button[onclick="sortHistory(\'amount\')"]');
-    
-    // รีเซ็ตสไตล์ของปุ่มทั้งหมด
-    [dateBtn, amountBtn].forEach(btn => {
-        btn.className = 'px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg transition-all duration-200 text-sm flex items-center gap-1.5';
-    });
-
-    let sortedData = [...electricityData];
-    if (type === 'date') {
-        sortedData.sort((a, b) => parseDate(b.date) - parseDate(a.date));
-        dateBtn.className = 'px-3 py-1.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 rounded-lg transition-all duration-200 text-sm flex items-center gap-1.5';
-    } else if (type === 'amount') {
-        sortedData.sort((a, b) => b.total - a.total);
-        amountBtn.className = 'px-3 py-1.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 rounded-lg transition-all duration-200 text-sm flex items-center gap-1.5';
-    }
-    renderHistoryTable(sortedData);
-}
-
-// ปรับปรุงฟังก์ชัน renderPagination
-function renderPagination(data, page = 1) {
-    const pagination = document.getElementById('pagination');
-    pagination.innerHTML = '';
-    const totalPages = Math.ceil(data.length / ITEMS_PER_PAGE);
-    
-    // เพิ่มปุ่ม Previous
-    if (totalPages > 1) {
-        const prevBtn = document.createElement('button');
-        prevBtn.innerHTML = '<i class="fas fa-chevron-left"></i>';
-        prevBtn.className = `px-3 py-1 rounded-lg transition-all duration-200 text-sm ${page === 1 ? 'bg-white/5 text-white/30 cursor-not-allowed' : 'bg-white/10 hover:bg-white/20 text-white/70'}`;
-        prevBtn.disabled = page === 1;
-        prevBtn.onclick = () => {
-            if (page > 1) {
-                currentPage = page - 1;
-                displayHistory(currentPage);
-            }
-        };
-        pagination.appendChild(prevBtn);
-    }
-
-    // แสดงปุ่มหมายเลขหน้า
-    for (let i = 1; i <= totalPages; i++) {
-        const btn = document.createElement('button');
-        btn.textContent = i;
-        btn.className = `px-3 py-1 rounded-lg transition-all duration-200 text-sm ${i === page ? 'bg-secondary text-white font-bold' : 'bg-white/10 hover:bg-white/20 text-white/70'}`;
-        btn.onclick = () => {
-            currentPage = i;
-            displayHistory(i);
-        };
-        pagination.appendChild(btn);
-    }
-
-    // เพิ่มปุ่ม Next
-    if (totalPages > 1) {
-        const nextBtn = document.createElement('button');
-        nextBtn.innerHTML = '<i class="fas fa-chevron-right"></i>';
-        nextBtn.className = `px-3 py-1 rounded-lg transition-all duration-200 text-sm ${page === totalPages ? 'bg-white/5 text-white/30 cursor-not-allowed' : 'bg-white/10 hover:bg-white/20 text-white/70'}`;
-        nextBtn.disabled = page === totalPages;
-        nextBtn.onclick = () => {
-            if (page < totalPages) {
-                currentPage = page + 1;
-                displayHistory(currentPage);
-            }
-        };
-        pagination.appendChild(nextBtn);
-    }
-}
-
-function refreshHistoryAndPagination() {
-    renderHistoryPage(currentPage);
-    renderPagination();
-}
-
-// ฟังก์ชันสำหรับแสดงผลการคำนวณ
-function showCalculationResult(data) {
-    // ป้องกัน date ผิดรูปแบบ
-    let thaiMonth = '-';
-    let year = '-';
-    let dateDisplay = data.date;
-    if (typeof data.date === 'string' && data.date.split('/').length === 3) {
-        const [day, month, y] = data.date.split('/');
-        const monthNum = parseInt(month);
-        thaiMonth = (monthNum >= 1 && monthNum <= 12) ? getThaiMonth(data.date) : '-';
-        year = (parseInt(y) ? parseInt(y) + 543 : '-');
-        dateDisplay = `${day}/${month}/${y}`;
-    }
-    // Layout แบบในภาพ + ปุ่ม LINE
-    const modal = document.getElementById('result-modal');
-    const modalContent = document.getElementById('result-modal-content');
-    modalContent.innerHTML = `
-        <div class="space-y-4">
-            <div class="bg-white/10 rounded-xl p-6 shadow">
-                <h3 class="text-lg font-bold mb-4">รายละเอียดการคำนวณ</h3>
-                <div class="space-y-2 text-base">
-                    <div class="flex justify-between"><span class="text-white/70">วันที่:</span><span>${dateDisplay}</span></div>
-                    <div class="flex justify-between"><span class="text-white/70">ค่าวัดปัจจุบัน:</span><span>${data.current.toLocaleString()} หน่วย</span></div>
-                    <div class="flex justify-between"><span class="text-white/70">ค่าวัดครั้งที่แล้ว:</span><span>${data.previous.toLocaleString()} หน่วย</span></div>
-                    <div class="flex justify-between"><span class="text-white/70">จำนวนหน่วยที่ใช้:</span><span>${data.units.toLocaleString()} หน่วย</span></div>
-                    <div class="flex justify-between"><span class="text-white/70">อัตราค่าไฟต่อหน่วย:</span><span>฿${data.rate.toFixed(2)}</span></div>
-                </div>
-            </div>
-            <div class="bg-white/10 rounded-xl p-6 shadow">
-                <h3 class="text-lg font-bold mb-4">สรุปผล</h3>
-                <div class="flex justify-between items-center mb-2">
-                    <span class="text-white/80">ค่าไฟ:</span>
-                    <span class="text-2xl font-bold text-green-400">฿${data.total.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}</span>
-                </div>
-                ${data.totalAll ? `
-                <div class="flex justify-between items-center mb-2">
-                    <span class="text-white/80">ค่าไฟทั้งบ้าน:</span>
-                    <span class="text-2xl font-bold text-green-400">฿${data.totalAll.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}</span>
-                </div>
-                ` : ''}
-                <button id="line-share-btn" class="mt-4 px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg flex items-center gap-2 mx-auto">
-                    ส่งข้อความทางไลน์
-                </button>
-            </div>
-            <div class="text-center text-base text-white/70 mt-2">
-                ค่าไฟของป้านาดเดือน${thaiMonth !== '-' ? thaiMonth : '-'} ${year !== '-' ? year : '-'}
-            </div>
-        </div>
-    `;
-    modal.classList.remove('hidden');
-    modal.classList.add('flex');
-    modal.style.opacity = '0';
-    modal.style.transform = 'scale(0.95)';
-    setTimeout(() => {
-        modal.style.opacity = '1';
-        modal.style.transform = 'scale(1)';
-        // LINE share
-        const lineBtn = document.getElementById('line-share-btn');
-        if (lineBtn) {
-            const msg = `ค่าไฟของป้านาดเดือน${thaiMonth} ${year}\n` +
-                `รวม ${data.total.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})} บาท\n` +
-                `ใช้ไฟ ${data.units.toLocaleString()} หน่วย หน่วยละ ฿${data.rate.toFixed(2)}\n` +
-                `ค่าวัดปัจจุบัน: ${data.current.toLocaleString()} | ค่าวัดครั้งที่แล้ว: ${data.previous.toLocaleString()}` +
-                (data.totalAll ? `\nค่าไฟทั้งบ้าน: ฿${data.totalAll.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}` : '');
-            const url = `https://line.me/R/msg/text/?${encodeURIComponent(msg)}`;
-            lineBtn.onclick = () => window.open(url, '_blank');
+// ฟังก์ชันสำหรับแก้ไขข้อมูล
+async function editBill(date) {
+    try {
+        console.log('Editing bill for date:', date);
+        // ดึงข้อมูลจาก Firebase
+        const snapshot = await db.ref('electricityData').once('value');
+        const data = snapshot.val();
+        const bills = Object.values(data);
+        
+        // หาข้อมูลที่ต้องการแก้ไข
+        const bill = bills.find(b => b.date === date);
+        if (!bill) {
+            console.error('Bill not found:', date);
+            alert('ไม่พบข้อมูลที่ต้องการแก้ไข');
+            return;
         }
-    }, 10);
+
+        // เติมข้อมูลในฟอร์มแก้ไข
+        document.getElementById('edit-date').value = bill.date;
+        document.getElementById('edit-current').value = bill.current;
+        document.getElementById('edit-previous').value = bill.previous;
+        document.getElementById('edit-rate').value = bill.rate;
+        document.getElementById('edit-total-all').value = bill.totalAll;
+
+        // แสดง modal
+        document.getElementById('edit-modal').classList.remove('hidden');
+        document.getElementById('edit-modal').classList.add('flex');
+
+    } catch (error) {
+        console.error('Error in editBill:', error);
+        alert('เกิดข้อผิดพลาดในการแก้ไขข้อมูล: ' + error.message);
+    }
 }
 
-// เรียกเมื่อโหลดหน้า
-window.addEventListener('DOMContentLoaded', () => {
-    // โหลดข้อมูลจาก localStorage
-    loadFromLocalStorage();
-    cleanInvalidDates();
-    displayHistory();
-    // แสดงค่าไฟครั้งที่แล้วในช่อง input
-    updatePreviousReading();
-    document.getElementById('previous-reading').readOnly = true;
-    
-    // ตั้งค่าวันที่เริ่มต้นเป็นวันนี้
-    const today = new Date().toISOString().split('T')[0];
-    document.getElementById('bill-date').value = today;
+// ฟังก์ชันสำหรับบันทึกการแก้ไข
+async function saveEdit() {
+    try {
+        const date = document.getElementById('edit-date').value;
+        const current = parseFloat(document.getElementById('edit-current').value);
+        const previous = parseFloat(document.getElementById('edit-previous').value);
+        const rate = parseFloat(document.getElementById('edit-rate').value);
+        const totalAll = parseFloat(document.getElementById('edit-total-all').value);
 
-    // เพิ่ม event listener สำหรับปิด modal
-    document.querySelector('.close').addEventListener('click', () => {
+        // คำนวณค่าไฟ
+        const units = current - previous;
+        const total = units * rate; // ค่าไฟทั้งหมด = ราคาต่อหน่วย * จำนวนหน่วย
+
+        // สร้างข้อมูลใหม่
+        const updatedBill = {
+            date,
+            current,
+            previous,
+            units,
+            rate,
+            total,
+            totalAll
+        };
+
+        // บันทึกลง Firebase
+        await db.ref(`electricityData/${date}`).set(updatedBill);
+        console.log('Bill updated successfully:', updatedBill);
+
+        // ปิด modal
         closeModal();
-    });
+
+        // รีเฟรชตาราง
+        await renderHistoryTable();
+
+        alert('บันทึกข้อมูลเรียบร้อยแล้ว');
+
+    } catch (error) {
+        console.error('Error in saveEdit:', error);
+        alert('เกิดข้อผิดพลาดในการบันทึกข้อมูล: ' + error.message);
+    }
+}
+
+// ฟังก์ชันสำหรับลบข้อมูล
+async function deleteBill(date) {
+    try {
+        if (!confirm('คุณต้องการลบข้อมูลนี้ใช่หรือไม่?')) {
+            return;
+        }
+
+        console.log('Deleting bill for date:', date);
+        
+        // ลบข้อมูลจาก Firebase
+        await db.ref(`electricityData/${date}`).remove();
+        console.log('Bill deleted successfully');
+
+        // รีเฟรชตาราง
+        await renderHistoryTable();
+
+        alert('ลบข้อมูลเรียบร้อยแล้ว');
+
+    } catch (error) {
+        console.error('Error in deleteBill:', error);
+        alert('เกิดข้อผิดพลาดในการลบข้อมูล: ' + error.message);
+    }
+}
+
+// ฟังก์ชันสำหรับปิด modal
+function closeModal() {
+    document.getElementById('edit-modal').classList.add('hidden');
+    document.getElementById('edit-modal').classList.remove('flex');
+}
+
+// เพิ่ม event listener สำหรับปุ่มปิด modal
+document.addEventListener('DOMContentLoaded', function() {
+    // ... existing code ...
+
+    // เพิ่ม event listener สำหรับปุ่มปิด modal
+    document.querySelector('#edit-modal button[onclick="closeModal()"]').addEventListener('click', closeModal);
 
     // ปิด modal เมื่อคลิกนอก modal
     window.addEventListener('click', (event) => {
@@ -514,14 +433,104 @@ window.addEventListener('DOMContentLoaded', () => {
         if (event.target === modal) {
             closeModal();
         }
-        const resultModal = document.getElementById('result-modal');
-        if (event.target === resultModal) {
-            closeResultModal();
-        }
     });
+});
 
-    allowOnlyNumberInput('#current-reading, #previous-reading, #total-units', false);
-    allowOnlyNumberInput('#rate, #total-all', true);
+// เพิ่มฟังก์ชันสำหรับการเรียงลำดับ
+function sortHistory(sortBy) {
+    console.log('Sorting by:', sortBy);
+    renderHistoryTable(null, sortBy);
+}
+
+// ฟังก์ชันอัพโหลดข้อมูลจาก localStorage ขึ้น Firebase
+async function uploadLocalDataToFirebase() {
+    try {
+        // อ่านข้อมูลจาก localStorage
+        const savedData = localStorage.getItem('electricityData');
+        if (!savedData) {
+            console.log('ไม่มีข้อมูลใน localStorage');
+            return;
+        }
+
+        const localData = JSON.parse(savedData);
+        console.log('พบข้อมูลใน localStorage:', localData.length, 'รายการ');
+
+        // อัพโหลดทีละรายการ
+        for (const data of localData) {
+            const billData = {
+                date: data.date,
+                currentReading: parseFloat(data.current),
+                previousReading: parseFloat(data.previous),
+                unitsUsed: parseFloat(data.units),
+                ratePerUnit: parseFloat(data.rate),
+                totalBill: parseFloat(data.total),
+                totalAll: parseFloat(data.totalAll || 0),
+                timestamp: Date.now() - Math.random() * 1000000 // ทำให้ timestamp ไม่ซ้ำกัน
+            };
+
+            console.log('กำลังอัพโหลดข้อมูล:', billData);
+            await saveToFirebase(billData);
+        }
+
+        console.log('อัพโหลดข้อมูลสำเร็จ');
+        alert('อัพโหลดข้อมูลสำเร็จ');
+        
+        // รีโหลดตารางประวัติ
+        await renderHistoryTable();
+    } catch (error) {
+        console.error('เกิดข้อผิดพลาดในการอัพโหลดข้อมูล:', error);
+        alert('เกิดข้อผิดพลาดในการอัพโหลดข้อมูล');
+    }
+}
+
+// เรียกใช้ฟังก์ชันอัพโหลดเมื่อโหลดหน้า
+document.addEventListener('DOMContentLoaded', async function() {
+    console.log('Initializing...');
+    try {
+        // Create refresh button
+        const refreshButton = document.createElement('button');
+        refreshButton.className = 'px-4 py-2 bg-secondary hover:bg-secondary/90 rounded-lg font-medium text-base transition-all shadow-md flex-shrink-0';
+        refreshButton.innerHTML = '<i class="fas fa-sync-alt mr-2"></i>อัปเดตข้อมูล';
+        refreshButton.onclick = async function() {
+            try {
+                console.log('Manual refresh started...');
+                // Try to load from Firebase first
+                const snapshot = await db.ref('electricityData').once('value');
+                const data = snapshot.val();
+                
+                if (data) {
+                    console.log('Data loaded from Firebase:', data);
+                    renderHistoryTable(data, 'date'); // Default sort by date
+                } else {
+                    console.log('No data in Firebase, fetching from Google Sheets...');
+                    // If no data in Firebase, fetch from Google Sheets
+                    const sheetData = await fetchSheetData();
+                    if (sheetData && sheetData.length > 0) {
+                        console.log('Data fetched from sheets:', sheetData);
+                        await saveToFirebase(sheetData);
+                        renderHistoryTable(sheetData, 'date'); // Default sort by date
+                    } else {
+                        console.warn('No data found from Google Sheets');
+                        alert('ไม่พบข้อมูลจาก Google Sheets');
+                    }
+                }
+            } catch (error) {
+                console.error('Error during manual refresh:', error);
+                alert('เกิดข้อผิดพลาดในการอัปเดตข้อมูล: ' + error.message);
+            }
+        };
+
+        // Add refresh button to the page
+        const buttonContainer = document.querySelector('.flex.gap-2.justify-end');
+        if (buttonContainer) {
+            buttonContainer.appendChild(refreshButton);
+        }
+
+        // Initial render with default sort by date
+        await renderHistoryTable(null, 'date');
+    } catch (error) {
+        console.error('Error during initialization:', error);
+    }
 });
 
 window.showCalculationResult = showCalculationResult;
@@ -548,7 +557,7 @@ function cleanInvalidDates() {
             electricityData.splice(i, 1);
         }
     }
-    saveToLocalStorage();
+    saveToFirebase(electricityData[0]);
 }
 
 function allowOnlyNumberInput(selector, allowDecimal = false) {
@@ -567,4 +576,77 @@ function allowOnlyNumberInput(selector, allowDecimal = false) {
             e.preventDefault();
         });
     });
-} 
+}
+
+// Function to update pagination
+function updatePagination(totalItems, currentStartIndex, itemsPerPage) {
+    const pagination = document.getElementById('pagination');
+    const totalPages = Math.ceil(totalItems / itemsPerPage);
+    const currentPage = Math.floor(currentStartIndex / itemsPerPage) + 1;
+
+    let paginationHTML = '';
+
+    // Previous button
+    paginationHTML += `
+        <button onclick="changePage(${currentPage - 1})" 
+            class="px-3 py-1 rounded-lg ${currentPage === 1 ? 'bg-white/10 cursor-not-allowed' : 'bg-white/20 hover:bg-white/30'} transition-all"
+            ${currentPage === 1 ? 'disabled' : ''}>
+            <i class="fas fa-chevron-left"></i>
+        </button>
+    `;
+
+    // Page numbers
+    for (let i = 1; i <= totalPages; i++) {
+        paginationHTML += `
+            <button onclick="changePage(${i})" 
+                class="px-3 py-1 rounded-lg ${i === currentPage ? 'bg-secondary' : 'bg-white/20 hover:bg-white/30'} transition-all">
+                ${i}
+            </button>
+        `;
+    }
+
+    // Next button
+    paginationHTML += `
+        <button onclick="changePage(${currentPage + 1})" 
+            class="px-3 py-1 rounded-lg ${currentPage === totalPages ? 'bg-white/10 cursor-not-allowed' : 'bg-white/20 hover:bg-white/30'} transition-all"
+            ${currentPage === totalPages ? 'disabled' : ''}>
+            <i class="fas fa-chevron-right"></i>
+        </button>
+    `;
+
+    pagination.innerHTML = paginationHTML;
+}
+
+// Function to change page
+function changePage(page) {
+    const itemsPerPage = 10;
+    const startIndex = (page - 1) * itemsPerPage;
+    renderHistoryTable(electricityData, startIndex, itemsPerPage);
+}
+
+// ฟังก์ชันดึงค่าวัดไฟฟ้าล่าสุดจาก Firebase
+async function fetchLatestReading() {
+    try {
+        if (!db) {
+            throw new Error('Firebase is not initialized');
+        }
+        
+        const snapshot = await db.ref('electricityData').orderByChild('date').limitToLast(1).once('value');
+        const data = snapshot.val();
+        
+        if (data) {
+            const latestBill = Object.values(data)[0];
+            document.getElementById('previous-reading').value = latestBill.current;
+            return latestBill.current;
+        }
+        return null;
+    } catch (error) {
+        console.error('Error fetching latest reading:', error);
+        return null;
+    }
+}
+
+// เพิ่มการเรียกใช้ fetchLatestReading เมื่อโหลดหน้าเว็บ
+document.addEventListener('DOMContentLoaded', function() {
+    fetchLatestReading();
+}); 
