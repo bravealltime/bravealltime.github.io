@@ -170,6 +170,9 @@ async function renderHistoryTable(data = null, sortBy = 'date') {
         // Update pagination
         updatePagination(data.length);
 
+        // เรียกใช้ฟังก์ชันอัปเดตค่าวัดครั้งที่แล้วจากฐานข้อมูล
+        await updatePreviousReadingFromDB();
+
     } catch (error) {
         console.error('Error rendering history table:', error);
         document.getElementById('history-body').innerHTML = '';
@@ -372,6 +375,7 @@ async function saveEdit() {
 
         // รีเฟรชตาราง
         await renderHistoryTable();
+        await updatePreviousReadingFromDB();
 
         alert('บันทึกข้อมูลเรียบร้อยแล้ว');
 
@@ -403,6 +407,7 @@ async function deleteBill(date) {
             await db.ref(`electricityData/${keyToDelete}`).remove();
             console.log('Bill deleted successfully');
             await renderHistoryTable();
+            await updatePreviousReadingFromDB();
             alert('ลบข้อมูลเรียบร้อยแล้ว');
         } else {
             alert('ไม่พบข้อมูลที่ต้องการลบในฐานข้อมูล');
@@ -441,12 +446,19 @@ function sortHistory(sortBy) {
     renderHistoryTable(null, sortBy);
 }
 
-// ฟังก์ชันอัปเดตค่าวัดครั้งที่แล้วจากฐานข้อมูล
+// ฟังก์ชันอัปเดตค่าวัดครั้งที่แล้วจากฐานข้อมูล (sort ตามวันที่ใหม่สุด)
 async function updatePreviousReadingFromDB() {
     try {
         const bills = await loadFromFirebase();
         if (bills && bills.length > 0) {
-            bills.sort((a, b) => b.timestamp - a.timestamp);
+            // หา bill ที่วันที่ใหม่สุด (เปรียบเทียบ DD/MM/YYYY)
+            bills.sort((a, b) => {
+                const [dA, mA, yA] = a.date.split('/');
+                const [dB, mB, yB] = b.date.split('/');
+                const dateA = new Date(yA, mA - 1, dA);
+                const dateB = new Date(yB, mB - 1, dB);
+                return dateB - dateA;
+            });
             document.getElementById('previous-reading').value = bills[0].current;
         } else {
             document.getElementById('previous-reading').value = '';
