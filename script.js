@@ -769,6 +769,10 @@ function showResultModalFromHistory(date) {
                         <div class="bg-gray-100 rounded-xl p-3 text-center text-base text-gray-700 mb-4" id="summary-line">
                             ${generateSummaryLine(bill)}
                         </div>
+                        <div class="flex flex-col items-center my-4">
+                            <img src="qr-payment.jpg" alt="QR สำหรับชำระเงิน" class="w-56 rounded-xl shadow mb-2" />
+                            <div class="text-sm text-gray-600">สแกนเพื่อชำระเงินค่าไฟ</div>
+                        </div>
                     </div>
                     <div class="flex justify-end gap-2">
                         <button id="copy-image-btn" onclick="copyResultAsImage()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2">
