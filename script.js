@@ -770,7 +770,7 @@ function showResultModalFromHistory(date) {
                             ${generateSummaryLine(bill)}
                         </div>
                         <div class="flex flex-col items-center my-4">
-                            <img src="qr-payment.jpg" alt="QR สำหรับชำระเงิน" class="w-56 rounded-xl shadow mb-2" />
+                            <canvas id="promptpay-qr-canvas" width="224" height="224" class="rounded-xl shadow mb-2"></canvas>
                             <div class="text-sm text-gray-600">สแกนเพื่อชำระเงินค่าไฟ</div>
                         </div>
                     </div>
@@ -794,6 +794,35 @@ function showResultModalFromHistory(date) {
                     alert('คัดลอกผลลัพธ์แล้ว! ไปวางใน LINE ได้เลย');
                 });
             };
+
+            // Generate PromptPay QR ตามจำนวนเงิน
+            setTimeout(() => {
+                try {
+                    if (!window.PromptPayQR) {
+                        console.error('PromptPayQR library not loaded');
+                        return;
+                    }
+                    if (!window.QRious) {
+                        console.error('QRious library not loaded');
+                        return;
+                    }
+                    const idOrPhone = '1209701792030';
+                    const amount = Number(bill.total);
+                    const canvas = document.getElementById('promptpay-qr-canvas');
+                    if (!canvas) {
+                        console.error('ไม่พบ element promptpay-qr-canvas');
+                        return;
+                    }
+                    const payload = window.PromptPayQR.generatePayload(idOrPhone, { amount });
+                    new window.QRious({
+                        element: canvas,
+                        value: payload,
+                        size: 224
+                    });
+                } catch(e) {
+                    console.error('เกิดข้อผิดพลาดในการสร้าง QR:', e);
+                }
+            }, 0);
         }
     });
 }
