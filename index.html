@@ -172,8 +172,6 @@
                     <p class="text-white/70 text-sm">ยังไม่มีประวัติการคำนวณ</p>
                 </div>
             </div>
-            <!-- สรุปผลล่าสุด -->
-            <div id="latest-summary" class="mt-4"></div>
         </div>
 
         <!-- ผลการคำนวณ -->
@@ -256,17 +254,10 @@
         </div>
     </div>
 
-    <!-- Popup แจ้งเตือนบันทึกข้อมูลสำเร็จ -->
-    <div id="success-modal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden">
-      <div class="bg-white rounded-xl p-6 shadow-lg text-center">
-        <h2 class="text-xl font-bold mb-2 text-green-600">บันทึกข้อมูลสำเร็จ!</h2>
-        <button onclick="closeSuccessModal()" class="mt-4 px-4 py-2 bg-green-500 text-white rounded-lg">ปิด</button>
-      </div>
-    </div>
-
     <script src="script.js"></script>
     <script src="sheets.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
     <script>
     flatpickr("#bill-date", {
         dateFormat: "d/m/Y",

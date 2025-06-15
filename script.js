@@ -46,6 +46,9 @@ const ITEMS_PER_PAGE = 5;
 let currentPage = 1;
 let historyData = [];
 
+// ตัวแปรสำหรับควบคุมการแสดงสรุปผลลัพธ์ใต้ประวัติ
+let hasShownInlineResult = false;
+
 // แปลงวันที่จาก DD/MM/YYYY เป็น Date object
 function parseDate(dateStr) {
     if (!dateStr) return new Date();
@@ -240,49 +243,88 @@ function getThaiMonth(date) {
 // ฟังก์ชันสำหรับคำนวณค่าไฟ
 async function calculateBill() {
     try {
-        const date = document.getElementById('date').value;
-        const currentReading = parseFloat(document.getElementById('current-reading').value);
-        const previousReading = parseFloat(document.getElementById('previous-reading').value);
+        const date = document.getElementById('bill-date').value;
+        const current = parseFloat(document.getElementById('current-reading').value);
+        const previous = parseFloat(document.getElementById('previous-reading').value);
         const rate = parseFloat(document.getElementById('rate').value);
+        const totalAll = parseFloat(document.getElementById('total-all').value);
 
-        if (!date || isNaN(currentReading) || isNaN(previousReading) || isNaN(rate)) {
+        if (!date || isNaN(current) || isNaN(previous) || isNaN(rate)) {
             alert('กรุณากรอกข้อมูลให้ครบถ้วน');
             return;
         }
 
-        if (currentReading < previousReading) {
+        // คำนวณจำนวนหน่วยที่ใช้
+        const units = current - previous;
+        if (units < 0) {
             alert('ค่าวัดปัจจุบันต้องมากกว่าค่าวัดครั้งที่แล้ว');
             return;
         }
 
-        const units = currentReading - previousReading;
+        // คำนวณค่าไฟ
         const total = units * rate;
 
-        // บันทึกข้อมูลลง Firebase
+        // สร้างข้อมูลสำหรับบันทึก
         const billData = {
             date: date,
-            currentReading: currentReading,
-            previousReading: previousReading,
-            rate: rate,
+            current: current,
+            previous: previous,
             units: units,
+            rate: rate,
             total: total,
+            totalAll: totalAll,
             timestamp: Date.now()
         };
 
+        // บันทึกข้อมูลลง Firebase
         await saveToFirebase(billData);
 
-        // อัปเดตค่าวัดครั้งที่แล้วจากฐานข้อมูล
+        // ดึงประวัติใหม่จากฐานข้อมูลและอัปเดตตาราง
+        await renderHistoryTable();
         await updatePreviousReadingFromDB();
-        
-        // แสดง popup แจ้งเตือน
-        showSuccessModal();
-        
-        // แสดงสรุปผลล่าสุด
-        renderLatestSummary([billData]);
+
+        // แสดงสรุปผลลัพธ์ใต้ประวัติ เฉพาะครั้งแรกที่บันทึกข้อมูลใหม่
+        if (!hasShownInlineResult) {
+            const summary = `
+                <div class="bg-blue-50/50 rounded-xl p-6 shadow-sm mt-6 border border-blue-100">
+                    <div class="text-center mb-4">
+                        <h3 class="text-2xl font-bold text-blue-800">สรุปผลการคำนวณ</h3>
+                        <div class="text-blue-600 text-lg font-medium mt-1">บันทึกข้อมูลสำเร็จ!</div>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="bg-white/80 p-4 rounded-lg border border-blue-100">
+                            <div class="text-blue-600 mb-1">วันที่บันทึก</div>
+                            <div class="text-lg font-semibold text-blue-800">${date}</div>
+                        </div>
+                        <div class="bg-white/80 p-4 rounded-lg border border-blue-100">
+                            <div class="text-blue-600 mb-1">จำนวนหน่วยที่ใช้</div>
+                            <div class="text-lg font-semibold text-blue-800">${units} หน่วย</div>
+                        </div>
+                        <div class="bg-white/80 p-4 rounded-lg border border-blue-100">
+                            <div class="text-blue-600 mb-1">ค่าไฟทั้งหมด</div>
+                            <div class="text-lg font-semibold text-blue-800">${total.toLocaleString()} บาท</div>
+                        </div>
+                        <div class="bg-white/80 p-4 rounded-lg border border-blue-100">
+                            <div class="text-blue-600 mb-1">สถานะ</div>
+                            <div class="text-lg font-semibold text-blue-600">บันทึกเรียบร้อย</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.getElementById('inline-result').innerHTML = summary;
+            hasShownInlineResult = true;
+        }
+
+        // รีเซ็ตฟอร์ม
+        document.getElementById('current-reading').value = '';
+        document.getElementById('rate').value = '';
+        document.getElementById('total-all').value = '';
+        document.getElementById('total-units').value = '';
+        // previous-reading จะอัปเดตอัตโนมัติ
 
     } catch (error) {
-        console.error('Error calculating bill:', error);
-        alert('เกิดข้อผิดพลาดในการคำนวณ');
+        console.error('เกิดข้อผิดพลาดในการคำนวณ:', error);
+        alert('เกิดข้อผิดพลาดในการคำนวณ กรุณาลองใหม่อีกครั้ง');
     }
 }
 
@@ -695,47 +737,54 @@ function showResultModalFromHistory(date) {
             const modalContent = document.getElementById('result-modal-content');
             modalContent.innerHTML = '';
             modalContent.innerHTML = `
-                <h2 class="text-2xl font-bold mb-4 text-center">ผลการคำนวณ</h2>
-                <div class="bg-white/10 rounded-xl p-4 mb-4 space-y-2">
-                    <div class="text-base font-semibold text-white/80">รายละเอียด</div>
-                    <div class="flex justify-between border-b border-white/10 pb-1">
-                        <span>วันที่</span>
-                        <span class="font-bold">${bill.date}</span>
+                <div class="bg-white/90 rounded-2xl p-6 shadow-xl max-w-md mx-auto result-capture">
+                    <div class="result-capture-content px-6" style="overflow:visible;">
+                        <div class="text-center mb-4">
+                            <div class="text-2xl font-bold text-blue-800 mb-1">ผลการคำนวณค่าไฟ</div>
+                            <div class="text-base text-gray-500">วันที่ ${bill.date}</div>
+                        </div>
+                        <div class="divide-y divide-blue-100 mb-4">
+                            <div class="flex justify-between py-2">
+                                <span class="text-gray-600">ค่าวัดปัจจุบัน</span>
+                                <span class="font-bold text-blue-900">${bill.current} หน่วย</span>
+                            </div>
+                            <div class="flex justify-between py-2">
+                                <span class="text-gray-600">ค่าวัดครั้งที่แล้ว</span>
+                                <span class="font-bold text-blue-900">${bill.previous} หน่วย</span>
+                            </div>
+                            <div class="flex justify-between py-2">
+                                <span class="text-gray-600">จำนวนหน่วยที่ใช้</span>
+                                <span class="font-bold text-blue-900">${bill.units} หน่วย</span>
+                            </div>
+                            <div class="flex justify-between py-2">
+                                <span class="text-gray-600">อัตราค่าไฟต่อหน่วย</span>
+                                <span class="font-bold text-blue-900">${Number(bill.rate).toFixed(2)} บาท</span>
+                            </div>
+                        </div>
+                        <div class="bg-blue-50 rounded-xl p-4 text-center mb-4">
+                            <div class="text-lg font-semibold text-blue-700">ค่าไฟทั้งหมด</div>
+                            <div class="text-3xl font-bold text-blue-900">฿${Number(bill.total).toLocaleString()}</div>
+                            <div class="text-base text-blue-700">(${bill.units} หน่วย หน่วยละ ${Number(bill.rate).toFixed(2)} บาท)</div>
+                        </div>
+                        <div class="bg-gray-100 rounded-xl p-3 text-center text-base text-gray-700 mb-4" id="summary-line">
+                            ${generateSummaryLine(bill)}
+                        </div>
                     </div>
-                    <div class="flex justify-between border-b border-white/10 pb-1">
-                        <span>ค่าวัดปัจจุบัน</span>
-                        <span class="font-bold">${bill.current} หน่วย</span>
-                    </div>
-                    <div class="flex justify-between border-b border-white/10 pb-1">
-                        <span>ค่าวัดครั้งที่แล้ว</span>
-                        <span class="font-bold">${bill.previous} หน่วย</span>
-                    </div>
-                    <div class="flex justify-between border-b border-white/10 pb-1">
-                        <span>จำนวนหน่วยที่ใช้</span>
-                        <span class="font-bold">${bill.units} หน่วย</span>
-                    </div>
-                    <div class="flex justify-between">
-                        <span>อัตราค่าไฟต่อหน่วย</span>
-                        <span class="font-bold">${Number(bill.rate).toFixed(2)} บาท</span>
+                    <div class="flex justify-end gap-2">
+                        <button id="copy-image-btn" onclick="copyResultAsImage()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2">
+                            <i class="fas fa-copy"></i> <span>คัดลอก</span>
+                        </button>
+                        <button id="download-image-btn" onclick="downloadResultAsImage()" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center gap-2">
+                            <i class="fas fa-download"></i> ดาวน์โหลดรูปภาพ
+                        </button>
                     </div>
                 </div>
-                <div class="bg-green-600 rounded-xl p-4 mb-4 text-white text-center space-y-1">
-                    <div class="text-lg font-semibold">ค่าไฟทั้งหมด</div>
-                    <div class="text-3xl font-bold">฿${Number(bill.total).toLocaleString()}</div>
-                    <div class="text-base">(${bill.units} หน่วย หน่วยละ ${Number(bill.rate).toFixed(2)} บาท)</div>
-                </div>
-                <div class="bg-white/10 rounded-xl p-3 mb-4 text-center text-base font-medium text-white/90" id="summary-line">
-                    ${getSummaryLine(bill)}
-                </div>
-                <button id="copy-result-btn" class="w-full mt-2 py-2 bg-green-500 hover:bg-green-600 rounded-lg text-white font-medium transition-all">
-                    คัดลอกผลลัพธ์
-                </button>
             `;
             document.getElementById('result-modal').classList.remove('hidden');
             document.getElementById('result-modal').classList.add('flex');
 
             // เพิ่ม event สำหรับปุ่มคัดลอกผลลัพธ์
-            document.getElementById('copy-result-btn').onclick = function() {
+            document.getElementById('copy-image-btn').onclick = function() {
                 const summary = document.getElementById('summary-line').innerText;
                 navigator.clipboard.writeText(summary).then(() => {
                     alert('คัดลอกผลลัพธ์แล้ว! ไปวางใน LINE ได้เลย');
@@ -746,7 +795,7 @@ function showResultModalFromHistory(date) {
 }
 
 // ฟังก์ชันสร้างข้อความสรุปแบบสั้น
-function getSummaryLine(bill) {
+function generateSummaryLine(bill) {
     // แปลงวันที่เป็นเดือน/ปีไทย
     const [day, month, year] = bill.date.split('/');
     const months = [
@@ -755,7 +804,7 @@ function getSummaryLine(bill) {
     ];
     const thaiMonth = months[parseInt(month, 10)];
     const thaiYear = (parseInt(year, 10) + 543).toString();
-    return `ค่าไฟของป้านาดเดือน${thaiMonth} ${thaiYear} ฿${Number(bill.total).toLocaleString()} บาท ${bill.units} หน่วย หน่วยละ ${Number(bill.rate).toFixed(2)} บาท`;
+    return `ค่าไฟของป้านาดเดือน${thaiMonth} ${thaiYear} ฿${Number(bill.total).toLocaleString()} บาท ${bill.units.toLocaleString()} หน่วย หน่วยละ ${Number(bill.rate).toFixed(2)} บาท`;
 }
 
 // ฟังก์ชันส่งข้อความไป LINE Notify
@@ -797,50 +846,98 @@ async function clearAllElectricityData() {
 }
 window.clearAllElectricityData = clearAllElectricityData;
 
-// ฟังก์ชัน popup แจ้งเตือนบันทึกข้อมูลสำเร็จ
-function showSuccessModal() {
-    document.getElementById('success-modal').classList.remove('hidden');
-}
-function closeSuccessModal() {
-    document.getElementById('success-modal').classList.add('hidden');
+// ฟังก์ชันคัดลอกผลการคำนวณเป็นรูปภาพ
+async function copyResultAsImage() {
+    const target = document.querySelector('.result-capture');
+    const btn = document.getElementById('copy-image-btn');
+    if (!target || !btn) return;
+    let status = '';
+    await html2canvas(target, {backgroundColor: null, scale: 2}).then(async canvas => {
+        await new Promise(resolve => {
+            canvas.toBlob(async blob => {
+                if (navigator.clipboard && window.ClipboardItem) {
+                    try {
+                        await navigator.clipboard.write([
+                            new window.ClipboardItem({ 'image/png': blob })
+                        ]);
+                        status = 'success';
+                    } catch (e) {
+                        status = 'download';
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = 'ผลการคำนวณค่าไฟ.png';
+                        a.click();
+                        URL.revokeObjectURL(url);
+                    }
+                } else {
+                    status = 'download';
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'ผลการคำนวณค่าไฟ.png';
+                    a.click();
+                    URL.revokeObjectURL(url);
+                }
+                resolve();
+            }, 'image/png');
+        });
+    });
+    if (status === 'success') {
+        btn.querySelector('span').textContent = 'คัดลอกสำเร็จ!';
+    } else if (status === 'download') {
+        btn.querySelector('span').textContent = 'ดาวน์โหลดรูปภาพแล้ว';
+    } else {
+        btn.querySelector('span').textContent = 'คัดลอกไม่ได้';
+    }
+    setTimeout(() => {
+        btn.querySelector('span').textContent = 'คัดลอก';
+    }, 1500);
 }
 
-// ฟังก์ชันแสดงสรุปผลล่าสุดใต้ตารางประวัติ
-function renderLatestSummary(bills) {
-    if (!bills || bills.length === 0) {
-        document.getElementById('latest-summary').innerHTML = '';
-        return;
-    }
-    // sort ตามวันที่ใหม่สุด
-    bills.sort((a, b) => {
-        const [dA, mA, yA] = a.date.split('/');
-        const [dB, mB, yB] = b.date.split('/');
-        const dateA = new Date(yA, mA - 1, dA);
-        const dateB = new Date(yB, mB - 1, dB);
-        return dateB - dateA;
+// ฟังก์ชันดาวน์โหลดผลการคำนวณเป็นรูปภาพ (ไม่รวมปุ่ม)
+async function downloadResultAsImage() {
+    const target = document.querySelector('.result-capture-content');
+    const btn = document.getElementById('download-image-btn');
+    if (!target || !btn) return;
+    btn.disabled = true;
+    btn.querySelector('span')?.remove();
+    btn.innerHTML = '<i class="fas fa-download"></i> กำลังดาวน์โหลด...';
+    // สร้างชื่อไฟล์ตามเดือน/ปี
+    let filename = 'ค่าไฟ.png';
+    try {
+        const dateText = target.querySelector('.text-base.text-gray-500')?.textContent || '';
+        const dateMatch = dateText.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+        if (dateMatch) {
+            const months = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+            const month = months[parseInt(dateMatch[2], 10) - 1];
+            const year = (parseInt(dateMatch[3], 10) + 543).toString();
+            filename = `ค่าไฟ_${month}_${year}.png`;
+        }
+    } catch(e) {}
+    // เพิ่มขอบมลและพื้นหลังเฉพาะตอนแคป
+    const prevBorderRadius = target.style.borderRadius;
+    const prevBg = target.style.background;
+    const prevOverflow = target.style.overflow;
+    target.style.borderRadius = '1.5rem';
+    target.style.background = '#f6f9ff';
+    target.style.overflow = 'hidden';
+    await html2canvas(target, {backgroundColor: null, scale: 2}).then(canvas => {
+        canvas.toBlob(blob => {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.click();
+            URL.revokeObjectURL(url);
+        }, 'image/png');
     });
-    const bill = bills[0];
-    document.getElementById('latest-summary').innerHTML = `
-        <div class="bg-white/5 backdrop-blur-lg rounded-2xl p-6 shadow-lg border border-white/10">
-            <div class="text-xl font-medium mb-4 text-center text-white">สรุปผลล่าสุด</div>
-            <div class="grid grid-cols-2 gap-4">
-                <div class="bg-white/5 p-4 rounded-xl text-center hover:transform hover:-translate-y-1 transition-all">
-                    <span class="block text-sm text-white/70 mb-1">เดือน</span>
-                    <span class="text-lg font-medium text-white">${bill.date}</span>
-                </div>
-                <div class="bg-white/5 p-4 rounded-xl text-center hover:transform hover:-translate-y-1 transition-all">
-                    <span class="block text-sm text-white/70 mb-1">ค่าไฟ</span>
-                    <span class="text-lg font-medium text-white">฿${Number(bill.total).toLocaleString()}</span>
-                </div>
-                <div class="bg-white/5 p-4 rounded-xl text-center hover:transform hover:-translate-y-1 transition-all">
-                    <span class="block text-sm text-white/70 mb-1">จำนวนหน่วย</span>
-                    <span class="text-lg font-medium text-white">${bill.units} หน่วย</span>
-                </div>
-                <div class="bg-white/5 p-4 rounded-xl text-center hover:transform hover:-translate-y-1 transition-all">
-                    <span class="block text-sm text-white/70 mb-1">หน่วยละ</span>
-                    <span class="text-lg font-medium text-white">${Number(bill.rate).toFixed(2)} บาท</span>
-                </div>
-            </div>
-        </div>
-    `;
+    // คืนค่า style เดิม
+    target.style.borderRadius = prevBorderRadius;
+    target.style.background = prevBg;
+    target.style.overflow = prevOverflow;
+    setTimeout(() => {
+        btn.innerHTML = '<i class="fas fa-download"></i> ดาวน์โหลดรูปภาพ';
+        btn.disabled = false;
+    }, 1200);
 } 
