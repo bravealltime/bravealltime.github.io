@@ -387,9 +387,20 @@ async function saveEdit() {
         const rate = parseFloat(document.getElementById('edit-rate').value);
         const totalAll = parseFloat(document.getElementById('edit-total-all').value);
 
-        // คำนวณค่าไฟ
+        if (isNaN(current) || isNaN(previous) || isNaN(rate)) {
+            alert('กรุณากรอกข้อมูลให้ครบถ้วน');
+            return;
+        }
+
+        // คำนวณจำนวนหน่วยที่ใช้
         const units = current - previous;
-        const total = units * rate; // ค่าไฟทั้งหมด = ราคาต่อหน่วย * จำนวนหน่วย
+        if (units < 0) {
+            alert('ค่าวัดปัจจุบันต้องมากกว่าค่าวัดครั้งที่แล้ว');
+            return;
+        }
+
+        // คำนวณค่าไฟใหม่
+        const total = units * rate;
 
         // สร้างข้อมูลใหม่
         const updatedBill = {
@@ -399,21 +410,36 @@ async function saveEdit() {
             units,
             rate,
             total,
-            totalAll
+            totalAll,
+            timestamp: Date.now()
         };
 
         // บันทึกลง Firebase
-        await db.ref(`electricityData/${date}`).set(updatedBill);
-        console.log('Bill updated successfully:', updatedBill);
+        const snapshot = await db.ref('electricityData').once('value');
+        const data = snapshot.val();
+        let keyToUpdate = null;
+        for (const key in data) {
+            if (data[key].date === date) {
+                keyToUpdate = key;
+                break;
+            }
+        }
 
-        // ปิด modal
-        closeModal();
+        if (keyToUpdate) {
+            await db.ref(`electricityData/${keyToUpdate}`).set(updatedBill);
+            console.log('Bill updated successfully:', updatedBill);
 
-        // รีเฟรชตาราง
-        await renderHistoryTable();
-        await updatePreviousReadingFromDB();
+            // ปิด modal
+            closeModal();
 
-        alert('บันทึกข้อมูลเรียบร้อยแล้ว');
+            // รีเฟรชตาราง
+            await renderHistoryTable();
+            await updatePreviousReadingFromDB();
+
+            alert('บันทึกข้อมูลเรียบร้อยแล้ว');
+        } else {
+            alert('ไม่พบข้อมูลที่ต้องการแก้ไขในฐานข้อมูล');
+        }
 
     } catch (error) {
         console.error('Error in saveEdit:', error);
