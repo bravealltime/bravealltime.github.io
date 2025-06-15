@@ -472,15 +472,44 @@ tr:hover {
     text-shadow: 0 0 10px rgba(52, 211, 153, 0.3);
 }
 
-/* ปรับ modal-content ให้เหมาะกับมือถือ */
+/* ปรับ modal-content ให้เหมาะกับมือถือ (เพิ่มเติม) */
 #result-modal > div {
-  max-height: 90vh;
-  overflow-y: auto;
+  margin-top: 5vh;
+  margin-bottom: 5vh;
+  background: rgba(30, 41, 59, 0.95) !important;
+  border-radius: 18px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+}
+#result-modal-content > div {
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
 }
 @media (max-width: 600px) {
   #result-modal > div {
-    width: 95vw !important;
-    padding: 1rem !important;
-    border-radius: 10px !important;
+    width: 97vw !important;
+    padding: 0.7rem !important;
+    border-radius: 14px !important;
+    margin-top: 2vh;
+    margin-bottom: 2vh;
+  }
+  #result-modal-content {
+    font-size: 0.98rem;
+  }
+  #result-modal-content h2, #result-modal-content .text-2xl, #result-modal-content .text-3xl {
+    font-size: 1.1rem !important;
+  }
+  #result-modal-content .text-lg {
+    font-size: 1rem !important;
+  }
+  #result-modal-content .text-base {
+    font-size: 0.95rem !important;
+  }
+  #promptpay-qr-canvas {
+    width: 160px !important;
+    height: 160px !important;
+    max-width: 90vw;
+    margin: 0 auto;
+    display: block;
   }
 } 
