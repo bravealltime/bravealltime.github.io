@@ -53,14 +53,36 @@ const ROLE_PERMISSIONS = {
 // Check if user is authenticated. This should only be called once on page load.
 function checkAuth() {
     return new Promise((resolve) => {
-        const unsubscribe = auth.onAuthStateChanged((user) => {
-            unsubscribe(); // We only need the initial state, so we unsubscribe immediately.
+        auth.onAuthStateChanged(async (user) => {
             if (user) {
-                currentUser = user;
-                resolve(true);
+                try {
+                    // User is signed in. Fetch their data.
+                    const snapshot = await db.ref('users/' + user.uid).once('value');
+                    const userData = snapshot.val() || {}; // Ensure userData is an object
+                    
+                    // Construct the complete user object
+                    const fullUser = {
+                        uid: user.uid,
+                        email: user.email,
+                        name: userData.name || user.displayName,
+                        photoURL: userData.photoURL || user.photoURL,
+                        role: userData.role || 'user',
+                        ...userData // Add other db fields
+                    };
+                    
+                    // Force 'admin' role for specific email
+                    if (user.email === 'admin@electricity.com') {
+                        fullUser.role = 'admin';
+                    }
+
+                    resolve(fullUser); // Resolve with the user object
+                } catch (error) {
+                    console.error("Error fetching user data:", error);
+                    resolve(null); // Resolve with null on error
+                }
             } else {
-                currentUser = null;
-                resolve(false);
+                // User is not signed in.
+                resolve(null);
             }
         });
     });
@@ -84,8 +106,18 @@ async function getUserData(uid) {
 
 // Check if user has permission
 function hasPermission(permission) {
-    const userPermissions = ROLE_PERMISSIONS[userRole];
-    return userPermissions && userPermissions[permission];
+    const userRole = window.currentUserRole;
+
+    // Admin role has all permissions unconditionally.
+    if (userRole === 'admin') {
+        return true;
+    }
+
+    if (!userRole || !ROLE_PERMISSIONS[userRole]) {
+        return false;
+    }
+
+    return !!ROLE_PERMISSIONS[userRole][permission];
 }
 
 // Redirect to login if not authenticated
@@ -281,13 +313,13 @@ async function logout() {
 }
 
 // This is the single function to update all auth-related UI elements.
-async function updateAuthUI() {
-    console.log("[Auth] Updating UI...");
+function updateAuthUI(user) {
+    console.log("[Auth] Updating UI for user:", user);
     const authContainer = document.getElementById('auth-container');
     const adminToolsContainer = document.getElementById('admin-tools');
 
     // If no user is logged in, show the login button.
-    if (!currentUser) {
+    if (!user) {
         if (authContainer) {
             authContainer.innerHTML = `
                 <a href="login.html" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium flex items-center shadow transition">
@@ -298,41 +330,49 @@ async function updateAuthUI() {
         return;
     }
 
-    // If a user is logged in, fetch their data and update the UI.
+    // If a user is logged in, update the UI.
     try {
-        const userData = await getUserData(currentUser.uid);
-        userRole = userData.role; // Set global role for hasPermission()
+        const userDisplayName = user.name || user.email.split('@')[0];
+        const profileImage = user.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(userDisplayName)}&background=0D8ABC&color=fff`;
+        
+        let dropdownMenu = `
+            <a href="profile.html" class="block px-4 py-2 text-sm text-slate-300 hover:bg-slate-600 hover:text-white w-full text-left">
+                <i class="fas fa-user-circle w-4 mr-2"></i>โปรไฟล์
+            </a>
+        `;
 
-        console.log(`[Auth] User: ${currentUser.email}, Role: ${userRole}`);
-
-        // Update the main navigation buttons (auth-container)
-        if (authContainer) {
-            const profileImage = userData.profileImage || 'https://i.pravatar.cc/150?u=' + currentUser.uid;
-            let authHTML = '';
-            if (userRole === 'admin') {
-                authHTML = `
-                    <a href="admin.html" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium flex items-center shadow transition">
-                        <i class="fas fa-user-shield mr-2"></i>จัดการผู้ใช้
-                    </a>`;
-            } else {
-                authHTML = `
-                    <a href="profile.html" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium flex items-center shadow transition">
-                        <i class="fas fa-user mr-2"></i>โปรไฟล์
-                    </a>`;
-            }
-            authHTML += `
-                <button onclick="logout()" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium flex items-center shadow transition ml-2">
-                    <i class="fas fa-sign-out-alt mr-2"></i>ออกจากระบบ
-                </button>
-                <a href="profile.html">
-                    <img src="${profileImage}" alt="Profile" class="w-10 h-10 rounded-full object-cover border-2 border-blue-400 hover:border-blue-300 transition">
-                </a>`;
-            authContainer.innerHTML = authHTML;
+        if (user.role === 'admin') {
+            dropdownMenu += `
+                <a href="admin.html" class="block px-4 py-2 text-sm text-slate-300 hover:bg-slate-600 hover:text-white w-full text-left">
+                    <i class="fas fa-user-shield w-4 mr-2"></i>จัดการผู้ใช้
+                </a>
+            `;
         }
 
+        dropdownMenu += `
+            <button onclick="logout()" class="block px-4 py-2 text-sm text-red-400 hover:bg-slate-600 hover:text-white w-full text-left">
+                <i class="fas fa-sign-out-alt w-4 mr-2"></i>ออกจากระบบ
+            </button>
+        `;
+
+        authContainer.innerHTML = `
+            <div class="relative" x-data="{ open: false }" @click.outside="open = false">
+                <button @click="open = !open" class="flex items-center space-x-2">
+                    <span class="text-white font-medium text-sm hidden sm:block">${userDisplayName}</span>
+                    <img id="nav-user-img" src="${profileImage}" alt="Profile" class="w-10 h-10 rounded-full object-cover border-2 border-slate-600 hover:border-blue-500 transition">
+                </button>
+
+                <div x-show="open" x-transition 
+                    class="absolute right-0 mt-2 w-48 bg-slate-700 rounded-lg shadow-xl z-50 overflow-hidden border border-slate-600 py-1"
+                    style="display: none;">
+                    ${dropdownMenu}
+                </div>
+            </div>
+        `;
+        
         // Update the admin-specific tools area (admin-tools)
         if (adminToolsContainer) {
-            if (userRole === 'admin') {
+            if (user.role === 'admin') {
                 console.log("[Auth] User is admin, showing admin tools.");
                 adminToolsContainer.innerHTML = `
                     <button onclick="migrateOldData()" class="px-6 py-3 bg-yellow-500 hover:bg-yellow-600 text-white rounded-full font-bold text-lg shadow flex items-center gap-2 transition-all duration-200 border border-yellow-600">
@@ -349,7 +389,22 @@ async function updateAuthUI() {
 }
 
 // Initialize authentication
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', async function() {
+    if (document.body.classList.contains('requires-auth')) {
+        const user = await checkAuth();
+        window.currentUser = user; // Set global user object
+
+        if (user) {
+            window.currentUserRole = user.role; // Set global role for hasPermission()
+            updateAuthUI(user);
+            if(typeof initializePageContent === 'function') {
+                initializePageContent();
+            }
+        } else {
+            window.location.href = 'login.html';
+        }
+    }
+
     // This listener is for the login page specifically.
     if (document.getElementById('loginForm')) {
         auth.onAuthStateChanged(async (user) => {

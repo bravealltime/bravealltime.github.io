@@ -7,6 +7,7 @@
 const ITEMS_PER_PAGE = 5;
 let currentPage = 1;
 let editingIndex = -1;
+let allHistoryData = []; // This will hold all data for the current room, for sorting
 
 // --- Authentication & Initialization ---
 
@@ -50,6 +51,7 @@ function initializePageContent() {
             document.title = `ประวัติค่าไฟ - ห้อง ${roomParam}`;
             renderHistoryTable(roomParam);
             updatePreviousReadingFromDB(roomParam);
+            setupEvidenceModalListeners(); // Initialize listeners
         } else {
             // Handle case where room is not specified
             const historySection = document.getElementById('history-section');
@@ -178,13 +180,14 @@ async function renderHistoryTable(room) {
                 <td class="py-3 px-3 text-center text-green-400 font-bold">${Number(bill.total || 0).toLocaleString()}</td>
                 <td class="py-3 px-3 text-center">${Number(bill.totalAll || 0).toLocaleString()}</td>
                 <td class="py-3 px-3 text-center">
-                    <div class="flex items-center justify-center gap-3">
+                    <div class="flex items-center justify-center gap-4">
+                        <button onclick='generateQRCode(${JSON.stringify(bill)})' class="text-purple-400 hover:text-purple-300 transition-colors" title="สร้าง QR Code ชำระเงิน"><i class="fas fa-qrcode"></i></button>
                         ${bill.evidenceUrl ? 
-                            `<a href="${bill.evidenceUrl}" target="_blank" class="text-green-400 hover:text-green-300 transition-colors" title="ดูหลักฐาน"><i class="fas fa-receipt"></i></a>` :
-                            `<button onclick="openEvidenceModal('${bill.key}')" class="text-gray-400 hover:text-white transition-colors ${!hasPermission('canUploadEvidence') ? 'hidden' : ''}" title="แนบหลักฐาน"><i class="fas fa-camera"></i></button>`
+                            `<a href="${bill.evidenceUrl}" target="_blank" class="text-blue-400 hover:text-blue-300 transition-colors" title="ดูหลักฐาน"><i class="fas fa-eye"></i></a>` :
+                            `<button onclick="openEvidenceModal('${bill.key}')" class="text-blue-400 hover:text-blue-300 transition-colors" title="แนบหลักฐาน"><i class="fas fa-eye"></i></button>`
                         }
-                        <button onclick="openEditModal('${bill.key}')" class="text-blue-400 hover:text-blue-300 transition-colors ${!hasPermission('canEditAllBills') ? 'hidden' : ''}" title="แก้ไข"><i class="fas fa-edit"></i></button>
-                        <button onclick="deleteBill('${bill.key}')" class="text-red-400 hover:text-red-300 transition-colors ${!hasPermission('canDeleteBills') ? 'hidden' : ''}" title="ลบ"><i class="fas fa-trash"></i></button>
+                        <button onclick="openEditModal('${bill.key}')" class="text-blue-400 hover:text-blue-300 transition-colors" title="แก้ไข"><i class="fas fa-edit"></i></button>
+                        <button onclick="openDeleteConfirmModal('${bill.key}')" class="text-red-400 hover:text-red-300 transition-colors" title="ลบ"><i class="fas fa-trash"></i></button>
                     </div>
                 </td>
             </tr>
@@ -561,4 +564,329 @@ function getDueDateInfo(dueDateStr) {
     }
 
     return { show: true, text: `ครบกำหนดวันที่ ${dueDateStr}`, color: 'text-gray-400' };
+}
+
+// --- Modal Controls ---
+let keyToDelete = null;
+let keyForEvidence = null;
+
+function closeModal() {
+    const modal = document.getElementById('edit-modal');
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+}
+
+function openEvidenceModal(key) {
+    if (!hasPermission('canUploadEvidence')) {
+        showAlert('คุณไม่มีสิทธิ์แนบหลักฐาน', 'error');
+        return;
+    }
+    keyForEvidence = key;
+    // Reset modal state
+    const preview = document.getElementById('evidence-preview');
+    const placeholder = document.getElementById('evidence-placeholder');
+    const errorMsg = document.getElementById('evidence-error');
+    const saveBtn = document.getElementById('evidence-save-btn');
+    const fileInput = document.getElementById('evidence-image-input');
+    
+    fileInput.value = '';
+    preview.innerHTML = '';
+    preview.classList.add('hidden');
+    placeholder.classList.remove('hidden');
+    errorMsg.textContent = '';
+    saveBtn.disabled = true;
+
+    const modal = document.getElementById('evidence-modal');
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+}
+
+function closeEvidenceModal() {
+    keyForEvidence = null;
+    const modal = document.getElementById('evidence-modal');
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+}
+
+function openDeleteConfirmModal(key) {
+    if (!hasPermission('canDeleteBills')) {
+        showAlert('คุณไม่มีสิทธิ์ลบข้อมูล', 'error');
+        return;
+    }
+    keyToDelete = key;
+    const modal = document.getElementById('delete-confirm-modal');
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+}
+
+function closeDeleteConfirmModal() {
+    keyToDelete = null;
+    const modal = document.getElementById('delete-confirm-modal');
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+}
+
+function closeQrCodeModal() {
+    const modal = document.getElementById('qr-code-modal');
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+}
+
+async function confirmDelete() {
+    if (!keyToDelete) return;
+
+    try {
+        await db.ref(`electricityData/${keyToDelete}`).remove();
+        showAlert('ลบข้อมูลเรียบร้อยแล้ว', 'success');
+        
+        const params = new URLSearchParams(window.location.search);
+        const room = params.get('room');
+        currentPage = 1;
+        renderHistoryTable(room);
+        updatePreviousReadingFromDB(room);
+    } catch (error) {
+        console.error('Error deleting bill:', error);
+        showAlert('เกิดข้อผิดพลาดในการลบข้อมูล', 'error');
+    } finally {
+        closeDeleteConfirmModal();
+    }
+}
+
+async function handleEvidenceUpload() {
+    const fileInput = document.getElementById('evidence-image-input');
+    const file = fileInput.files[0];
+    if (!file || !keyForEvidence) return;
+
+    const saveBtn = document.getElementById('evidence-save-btn');
+    const progressContainer = document.getElementById('upload-progress-container');
+    const progressBar = document.getElementById('upload-progress-bar');
+    const errorMsg = document.getElementById('evidence-error');
+
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>กำลังอัปโหลด...';
+    progressContainer.classList.remove('hidden');
+    progressBar.style.width = '0%';
+    errorMsg.textContent = '';
+
+    try {
+        // Assume storage is initialized in auth.js or globally
+        const storageRef = firebase.storage().ref();
+        const evidenceRef = storageRef.child(`evidence/${keyForEvidence}/${Date.now()}_${file.name}`);
+        
+        const uploadTask = evidenceRef.put(file);
+
+        uploadTask.on('state_changed', 
+            (snapshot) => {
+                const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                progressBar.style.width = progress + '%';
+            }, 
+            (error) => {
+                throw error; // Pass error to the catch block
+            }, 
+            async () => {
+                const downloadURL = await uploadTask.snapshot.ref.getDownloadURL();
+                await db.ref(`electricityData/${keyForEvidence}`).update({ evidenceUrl: downloadURL });
+                
+                showAlert('อัปโหลดหลักฐานสำเร็จ!', 'success');
+                closeEvidenceModal();
+                const room = new URLSearchParams(window.location.search).get('room');
+                renderHistoryTable(room);
+            }
+        );
+
+    } catch (error) {
+        console.error("Upload failed:", error);
+        errorMsg.textContent = `เกิดข้อผิดพลาด: ${error.message}`;
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = '<i class="fas fa-save"></i> บันทึก';
+        progressContainer.classList.add('hidden');
+    }
+}
+
+
+// --- Event Listeners Setup ---
+
+function setupEvidenceModalListeners() {
+    const dropzone = document.getElementById('evidence-dropzone');
+    const fileInput = document.getElementById('evidence-image-input');
+    const preview = document.getElementById('evidence-preview');
+    const placeholder = document.getElementById('evidence-placeholder');
+    const saveBtn = document.getElementById('evidence-save-btn');
+    const errorMsg = document.getElementById('evidence-error');
+
+    dropzone.addEventListener('click', () => fileInput.click());
+    
+    dropzone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropzone.classList.add('border-blue-500', 'bg-slate-700');
+    });
+
+    dropzone.addEventListener('dragleave', () => {
+        dropzone.classList.remove('border-blue-500', 'bg-slate-700');
+    });
+
+    dropzone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropzone.classList.remove('border-blue-500', 'bg-slate-700');
+        const files = e.dataTransfer.files;
+        if (files.length) {
+            fileInput.files = files;
+            handleFileSelect(files[0]);
+        }
+    });
+    
+    fileInput.addEventListener('change', () => {
+        if (fileInput.files.length) {
+            handleFileSelect(fileInput.files[0]);
+        }
+    });
+
+    const handleFileSelect = (file) => {
+        errorMsg.textContent = '';
+        if (!file.type.startsWith('image/')) {
+            errorMsg.textContent = 'กรุณาเลือกไฟล์รูปภาพเท่านั้น';
+            saveBtn.disabled = true;
+            return;
+        }
+        if (file.size > 5 * 1024 * 1024) { // 5MB limit
+             errorMsg.textContent = 'ขนาดไฟล์ต้องไม่เกิน 5MB';
+             saveBtn.disabled = true;
+             return;
+        }
+
+        preview.innerHTML = `<img src="${URL.createObjectURL(file)}" class="max-h-40 rounded-lg object-contain">`;
+        preview.classList.remove('hidden');
+        placeholder.classList.add('hidden');
+        saveBtn.disabled = false;
+    };
+
+    saveBtn.addEventListener('click', handleEvidenceUpload);
+}
+
+function generateQRCode(record) {
+    if (!record) {
+        console.error("Record not found");
+        alert('ไม่พบข้อมูลสำหรับสร้าง QR Code');
+        return;
+    }
+
+    const promptPayId = '0864186891'; // Replace with your phone number or national ID
+    const amount = parseFloat(record.total);
+    const canGenerateQR = !isNaN(amount) && amount > 0;
+    let qrCodeImage = '';
+    let qrCodeCaption = '';
+    const receiptBgColor = '#1e293b'; // Corresponds to bg-slate-800
+
+    try {
+        if (canGenerateQR) {
+            // 1. Generate QR Code payload and image tag
+            const payload = window.ThaiQRCode.generatePayload(promptPayId, { amount });
+            const qr = qrcode(0, 'M');
+            qr.addData(payload);
+            qr.make();
+            // The QR code library generates an img tag with inline styles. We'll wrap it for centering.
+            qrCodeImage = `<div class="bg-white p-2 rounded-lg inline-block">${qr.createImgTag(5, 4)}</div>`;
+            qrCodeCaption = `<p class="text-sm font-semibold text-slate-400 mt-2">สแกนเพื่อชำระเงินค่าไฟ</p>`;
+        } else {
+            qrCodeImage = `
+                <div class="bg-red-900/50 border border-red-700 text-red-300 px-4 py-3 rounded-lg" role="alert">
+                    <p class="font-bold">ไม่สามารถสร้าง QR Code ได้</p>
+                    <p>เนื่องจากยอดชำระไม่ถูกต้อง (฿${(record.total || 0).toFixed(2)})</p>
+                </div>`;
+            qrCodeCaption = '';
+        }
+
+        // 2. Format data for display
+        const dateParts = record.date.split('/'); // dd/mm/yyyy
+        const billDate = new Date(parseInt(dateParts[2], 10) - 543, parseInt(dateParts[1], 10) - 1, parseInt(dateParts[0], 10));
+
+        const thaiMonths = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
+        
+        const displayDate = !isNaN(billDate.getTime()) ? `${dateParts[0]}/${dateParts[1]}/${parseInt(dateParts[2])}` : "ข้อมูลวันที่ไม่ถูกต้อง";
+        const monthName = !isNaN(billDate.getTime()) ? thaiMonths[billDate.getMonth()] : "";
+        const year = !isNaN(billDate.getTime()) ? billDate.getFullYear() + 543 : "";
+
+        const summaryText = `ค่าไฟห้อง ${record.room} ${record.name || ''} เดือน ${monthName} ${year} ฿${parseFloat(record.total).toFixed(2)} บาท (${record.units} หน่วย หน่วยละ ${parseFloat(record.rate).toFixed(2)} บาท)`;
+
+        // 3. Build the receipt HTML
+        const receiptContainer = document.getElementById('receipt-container');
+        receiptContainer.innerHTML = `
+            <div id="receipt-content" class="bg-slate-800 text-white rounded-xl p-6 shadow-2xl" style="font-family: 'Kanit', sans-serif; max-width: 380px; margin: auto;">
+                <div class="text-center mb-4">
+                    <h3 class="text-2xl font-bold" style="color: #94a9ff;">ผลการคำนวณค่าไฟ</h3>
+                    <p class="text-lg font-semibold text-slate-200 mt-1">ห้อง ${record.room} - ${record.name || 'ไม่มีชื่อ'}</p>
+                    <p class="text-sm text-slate-400">วันที่จด: ${displayDate}</p>
+                </div>
+                
+                <div class="border-t border-b border-slate-700 py-3 my-4 space-y-2 text-sm">
+                    <div class="flex justify-between text-slate-200"><span>ค่ามิเตอร์ปัจจุบัน</span> <span class="font-mono font-medium">${record.current} หน่วย</span></div>
+                    <div class="flex justify-between text-slate-200"><span>ค่ามิเตอร์ครั้งที่แล้ว</span> <span class="font-mono font-medium">${record.previous} หน่วย</span></div>
+                    <div class="flex justify-between text-slate-200"><span>จำนวนหน่วยที่ใช้</span> <span class="font-mono font-semibold">${record.units} หน่วย</span></div>
+                    <div class="flex justify-between text-slate-200"><span>อัตราค่าไฟต่อหน่วย</span> <span class="font-mono font-medium">${parseFloat(record.rate).toFixed(2)} บาท</span></div>
+                </div>
+
+                <div class="bg-blue-200 rounded-lg p-4 my-4 text-center">
+                    <p class="text-base font-semibold text-blue-800">ค่าไฟทั้งหมด</p>
+                    <h2 class="text-5xl font-bold text-blue-900 tracking-tight my-1">฿${parseFloat(record.total).toFixed(2)}</h2>
+                    <p class="text-sm font-medium text-blue-700">(${record.units} หน่วย หน่วยละ ${parseFloat(record.rate).toFixed(2)} บาท)</p>
+                </div>
+
+                <div class="text-xs text-slate-400 my-4 text-center px-2">
+                    <p>${summaryText}</p>
+                </div>
+
+                <div class="flex flex-col items-center justify-center mt-4">
+                    ${qrCodeImage}
+                    ${qrCodeCaption}
+                </div>
+            </div>
+        `;
+        
+        // 4. Setup download button visibility
+        const downloadBtn = document.getElementById('download-qr-btn');
+        downloadBtn.style.display = 'flex'; // Always show button, but disable if no QR
+
+        downloadBtn.onclick = () => {
+            const receiptElement = document.getElementById('receipt-content');
+            if (window.html2canvas) {
+                html2canvas(receiptElement, { 
+                    scale: 3, 
+                    backgroundColor: receiptBgColor,
+                    useCORS: true
+                }).then(canvas => {
+                    const link = document.createElement('a');
+                    link.href = canvas.toDataURL('image/png');
+                    link.download = `bill-receipt-room-${record.room}-${record.date.replace(/\//g, '-')}.png`;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                }).catch(err => {
+                    console.error('Error rendering receipt to image:', err);
+                    alert('ขออภัย, ไม่สามารถดาวน์โหลดใบแจ้งหนี้ได้');
+                });
+            } else {
+                console.error('html2canvas is not loaded');
+                alert('ไลบรารีสำหรับดาวน์โหลดรูปภาพยังไม่พร้อมใช้งาน');
+            }
+        };
+
+        // 5. Show the modal
+        const modal = document.getElementById('qr-code-modal');
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        modal.querySelector('[onclick="closeQrCodeModal()"]').focus();
+
+
+    } catch (error) {
+        console.error("Error generating QR Code:", error);
+        alert('เกิดข้อผิดพลาดในการสร้าง QR Code');
+    }
+}
+
+function downloadQRCode() {
+    const canvas = document.getElementById('qr-canvas');
+    const link = document.createElement('a');
+    link.download = `qr-payment-room-${document.getElementById('qr-room-info').textContent.replace(/\s/g, '-')}.png`;
+    link.href = canvas.toDataURL();
+    link.click();
 }

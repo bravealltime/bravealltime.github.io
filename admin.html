@@ -93,89 +93,37 @@
         </div>
     </nav>
 
-    <div class="container mx-auto px-4 py-8">
-        <!-- Stats Cards -->
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-            <div class="glass-effect rounded-xl p-6">
-                <div class="flex items-center justify-between">
-                    <div>
-                        <p class="text-white/70 text-sm">ผู้ใช้ทั้งหมด</p>
-                        <p id="total-users" class="text-2xl font-bold text-white">0</p>
-                    </div>
-                    <i class="fas fa-users text-3xl text-blue-400"></i>
+    <!-- Main Content -->
+    <main class="container mx-auto px-4 py-8">
+        <!-- User Management Section -->
+        <section id="user-management" class="bg-slate-800 rounded-2xl p-6 shadow-lg border border-slate-700">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-xl font-bold text-white">จัดการผู้ใช้</h2>
+                    <button id="add-user-btn" class="px-4 py-2 bg-success hover:bg-green-600 text-white rounded-lg transition-colors">
+                        <i class="fas fa-user-plus mr-2"></i>เพิ่มผู้ใช้
+                    </button>
+                </div>
+                
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left">
+                        <thead class="border-b border-white/20">
+                            <tr>
+                                <th class="py-3 px-4 text-white/70 font-medium">รูปโปรไฟล์</th>
+                                <th class="py-3 px-4 text-white/70 font-medium">ชื่อ</th>
+                                <th class="py-3 px-4 text-white/70 font-medium">อีเมล</th>
+                                <th class="py-3 px-4 text-white/70 font-medium">สิทธิ์</th>
+                                <th class="py-3 px-4 text-white/70 font-medium">วันที่สมัคร</th>
+                                <th class="py-3 px-4 text-white/70 font-medium">จัดการ</th>
+                            </tr>
+                        </thead>
+                        <tbody id="users-table-body">
+                            <!-- Users will be loaded here -->
+                        </tbody>
+                    </table>
                 </div>
             </div>
-            <div class="glass-effect rounded-xl p-6">
-                <div class="flex items-center justify-between">
-                    <div>
-                        <p class="text-white/70 text-sm">ห้องทั้งหมด</p>
-                        <p id="total-rooms" class="text-2xl font-bold text-white">0</p>
-                    </div>
-                    <i class="fas fa-home text-3xl text-green-400"></i>
-                </div>
-            </div>
-            <div class="glass-effect rounded-xl p-6">
-                <div class="flex items-center justify-between">
-                    <div>
-                        <p class="text-white/70 text-sm">บิลทั้งหมด</p>
-                        <p id="total-bills" class="text-2xl font-bold text-white">0</p>
-                    </div>
-                    <i class="fas fa-file-invoice text-3xl text-yellow-400"></i>
-                </div>
-            </div>
-            <div class="glass-effect rounded-xl p-6">
-                <div class="flex items-center justify-between">
-                    <div>
-                        <p class="text-white/70 text-sm">Admin</p>
-                        <p id="total-admins" class="text-2xl font-bold text-white">0</p>
-                    </div>
-                    <i class="fas fa-crown text-3xl text-purple-400"></i>
-                </div>
-            </div>
-        </div>
-
-        <!-- Tabs -->
-        <div class="mb-8">
-            <div class="flex space-x-1 bg-white/10 rounded-lg p-1">
-                <button id="users-tab" class="flex-1 py-2 px-4 rounded-md bg-secondary text-white font-medium transition-all">
-                    <i class="fas fa-users mr-2"></i>จัดการผู้ใช้
-                </button>
-                <button id="roles-tab" class="flex-1 py-2 px-4 rounded-md text-white/70 hover:text-white transition-all">
-                    <i class="fas fa-user-shield mr-2"></i>จัดการสิทธิ์
-                </button>
-                <button id="reports-tab" class="flex-1 py-2 px-4 rounded-md text-white/70 hover:text-white transition-all">
-                    <i class="fas fa-chart-bar mr-2"></i>รายงาน
-                </button>
-            </div>
-        </div>
-
-        <!-- Users Management Tab -->
-        <div id="users-content" class="glass-effect rounded-xl p-6">
-            <div class="flex justify-between items-center mb-6">
-                <h2 class="text-xl font-bold text-white">จัดการผู้ใช้</h2>
-                <button id="add-user-btn" class="px-4 py-2 bg-success hover:bg-green-600 text-white rounded-lg transition-colors">
-                    <i class="fas fa-user-plus mr-2"></i>เพิ่มผู้ใช้
-                </button>
-            </div>
-            
-            <div class="overflow-x-auto">
-                <table class="w-full text-left">
-                    <thead class="border-b border-white/20">
-                        <tr>
-                            <th class="py-3 px-4 text-white/70 font-medium">รูปโปรไฟล์</th>
-                            <th class="py-3 px-4 text-white/70 font-medium">ชื่อ</th>
-                            <th class="py-3 px-4 text-white/70 font-medium">อีเมล</th>
-                            <th class="py-3 px-4 text-white/70 font-medium">สิทธิ์</th>
-                            <th class="py-3 px-4 text-white/70 font-medium">วันที่สมัคร</th>
-                            <th class="py-3 px-4 text-white/70 font-medium">จัดการ</th>
-                        </tr>
-                    </thead>
-                    <tbody id="users-table-body">
-                        <!-- Users will be loaded here -->
-                    </tbody>
-                </table>
-            </div>
-        </div>
+        </section>
 
         <!-- Roles Management Tab -->
         <div id="roles-content" class="glass-effect rounded-xl p-6 hidden">
@@ -264,7 +212,7 @@
                 </div>
             </div>
         </div>
-    </div>
+    </main>
 
     <!-- Add User Modal -->
     <div id="add-user-modal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden">
@@ -349,6 +297,8 @@
     <!-- Alert Container -->
     <div id="alert-container" class="fixed top-4 right-4 z-50"></div>
 
+    <!-- App Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="auth.js"></script>
     <script src="admin.js"></script>
 </body>

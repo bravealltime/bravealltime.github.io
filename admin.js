@@ -272,8 +272,8 @@ function hideModal(modalId) {
 }
 
 // Event listeners
-document.addEventListener('DOMContentLoaded', async function() {
-    // Check admin permission
+document.addEventListener('DOMContentLoaded', async () => {
+    // Permission check
     const hasPermission = await checkAdminPermission();
     if (!hasPermission) return;
     
@@ -283,12 +283,16 @@ document.addEventListener('DOMContentLoaded', async function() {
         document.getElementById('current-user').textContent = `ยินดีต้อนรับ, ${currentUser.email}`;
     }
     
-    // Load initial data
+    // Setup UI components like tabs
+    setupTabs();
+    
+    // Initial data load
     await loadStats();
     await loadUsers();
     
     // Tab switching
-    document.getElementById('users-tab').addEventListener('click', () => switchTab('users'));
+    const usersTab = document.getElementById('users-tab');
+    usersTab.addEventListener('click', () => switchTab('users'));
     document.getElementById('roles-tab').addEventListener('click', () => switchTab('roles'));
     document.getElementById('reports-tab').addEventListener('click', () => switchTab('reports'));
     
@@ -336,4 +340,91 @@ document.addEventListener('DOMContentLoaded', async function() {
 
 // Export functions for global use
 window.editUser = editUser;
-window.deleteUser = deleteUser; 
+window.deleteUser = deleteUser;
+
+function setupTabs() {
+    // ... existing code ...
+}
+
+// --- Report Generator ---
+async function initializeReportGenerator() {
+    try {
+        // Initialize flatpickr date picker
+        flatpickr("#report-date", {
+            dateFormat: "d/m/Y",
+            altInput: true,
+            altFormat: "j F Y",
+            locale: "th"
+        });
+
+        // Populate room dropdown
+        const roomSelect = document.getElementById('report-room');
+        const snapshot = await db.ref('electricityData').once('value');
+        const data = snapshot.val();
+        if (!data) {
+            roomSelect.innerHTML = '<option value="">ไม่พบข้อมูลห้อง</option>';
+            return;
+        }
+
+        const rooms = [...new Set(Object.values(data).map(bill => bill.room))].sort();
+        roomSelect.innerHTML = '<option value="">-- เลือกห้อง --</option>';
+        rooms.forEach(room => {
+            const option = document.createElement('option');
+            option.value = room;
+            option.textContent = room;
+            roomSelect.appendChild(option);
+        });
+
+        // Add form submit listener
+        const reportForm = document.getElementById('report-form');
+        reportForm.addEventListener('submit', handleReportGeneration);
+
+    } catch (error) {
+        console.error("Error initializing report generator:", error);
+        document.getElementById('report-error').textContent = 'ไม่สามารถโหลดข้อมูลห้องได้';
+    }
+}
+
+async function handleReportGeneration(event) {
+    event.preventDefault();
+    const room = document.getElementById('report-room').value;
+    const date = document.getElementById('report-date').value;
+    const errorEl = document.getElementById('report-error');
+    errorEl.textContent = '';
+
+    if (!room || !date) {
+        errorEl.textContent = 'กรุณาเลือกห้องและวันที่';
+        return;
+    }
+
+    try {
+        const snapshot = await db.ref('electricityData')
+            .orderByChild('room')
+            .equalTo(room)
+            .once('value');
+            
+        const data = snapshot.val();
+        if (!data) {
+            errorEl.textContent = 'ไม่พบบิลสำหรับห้องที่เลือก';
+            return;
+        }
+
+        // Find the specific bill for that date
+        const bill = Object.values(data).find(b => b.date === date);
+
+        if (bill) {
+            // Found the bill, now generate the receipt using the global function
+            if (typeof generateQRCode === 'function') {
+                generateQRCode(bill);
+            } else {
+                console.error('generateQRCode function is not available.');
+                errorEl.textContent = 'เกิดข้อผิดพลาด: ฟังก์ชันสร้างใบแจ้งหนี้ไม่พร้อมใช้งาน';
+            }
+        } else {
+            errorEl.textContent = 'ไม่พบบิลสำหรับวันที่ที่เลือก';
+        }
+    } catch (error) {
+        console.error("Error fetching report data:", error);
+        errorEl.textContent = 'เกิดข้อผิดพลาดในการค้นหาข้อมูล';
+    }
+} 
