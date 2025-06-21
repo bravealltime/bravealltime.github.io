@@ -403,6 +403,20 @@ function hideModal(modalId) {
     document.getElementById(modalId).classList.add('hidden');
 }
 
+// Go back function
+function goBack() {
+    // Check if there's previous history
+    if (window.history.length > 1) {
+        window.history.back();
+    } else {
+        // If no history, go to home page
+        window.location.href = 'home.html';
+    }
+}
+
+// Make goBack function global
+window.goBack = goBack;
+
 // Export functions for global use
 window.editUser = editUser;
 window.deleteUser = deleteUser;
