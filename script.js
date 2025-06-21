@@ -469,9 +469,42 @@ async function handleAddRoom(event) {
         };
 
         // Save to Firebase
-        const newRef = await db.ref('electricityData').push(newBill);
+        const newBillRef = await db.ref('electricityData').push(newBill);
+        const newBillKey = newBillRef.key; // Get the key of the new bill/room entry in electricityData
         
         showAlert('เพิ่มข้อมูลห้องใหม่เรียบร้อยแล้ว', 'success');
+
+        // If the current user is Level 1 Owner, add this new room to their managedRooms
+        if (window.currentUserRole === '1' && window.currentUser && window.currentUser.uid) {
+            const userManagedRoomsRef = db.ref(`users/${window.currentUser.uid}/managedRooms`);
+            userManagedRoomsRef.once('value', snapshot => {
+                let managedRooms = snapshot.val() || [];
+                if (!Array.isArray(managedRooms)) { // Ensure it's an array
+                    managedRooms = [];
+                }
+                if (!managedRooms.includes(newBill.room)) {
+                    managedRooms.push(newBill.room);
+                    userManagedRoomsRef.set(managedRooms).then(() => {
+                        console.log(`Room ${newBill.room} added to managedRooms for user ${window.currentUser.uid}`);
+                        // Update local currentUserData as well
+                        if (window.currentUserData) {
+                            window.currentUserData.managedRooms = managedRooms;
+                        }
+                        // If tenant management UI is active, refresh room list in modal
+                        if (typeof loadManagedRoomsForTenantModal === 'function' &&
+                            document.getElementById('level1-owner-tabs-container') &&
+                            !document.getElementById('level1-owner-tabs-container').classList.contains('hidden') &&
+                            document.getElementById('add-edit-tenant-modal') &&
+                            !document.getElementById('add-edit-tenant-modal').classList.contains('hidden') ) {
+                            loadManagedRoomsForTenantModal();
+                        }
+                    }).catch(error => {
+                        console.error('Failed to update managedRooms:', error);
+                        showAlert('เพิ่มห้องใหม่สำเร็จ แต่เกิดข้อผิดพลาดในการอัปเดตรายการห้องที่จัดการ', 'warning');
+                    });
+                }
+            });
+        }
 
         // Close modal and reset form
         const modal = document.getElementById('add-room-modal');
