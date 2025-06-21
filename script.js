@@ -156,48 +156,82 @@ async function renderHomeRoomCards() {
 
         const rooms = {};
         displayableBills.forEach(bill => {
-            if (!rooms[bill.room] || new Date(bill.date.split('/').reverse().join('-')) > new Date(rooms[bill.room].date.split('/').reverse().join('-'))) {
-                rooms[bill.room] = bill;
+            // Ensure bill and bill.room are valid before trying to use bill.room as a key
+            if (bill && typeof bill.room !== 'undefined' && bill.room !== null && String(bill.room).trim() !== '') {
+                // Also ensure bill.date is valid for comparison
+                if (bill.date && typeof bill.date === 'string' && bill.date.split('/').length === 3) {
+                    if (!rooms[bill.room] || new Date(bill.date.split('/').reverse().join('-')) > new Date(rooms[bill.room].date.split('/').reverse().join('-'))) {
+                        rooms[bill.room] = bill;
+                    }
+                } else {
+                    // Handle bills with invalid date for sorting - perhaps add them if room doesn't exist yet, or log warning
+                    if (!rooms[bill.room]) {
+                        rooms[bill.room] = bill; // Add if room not present, but date comparison is skipped
+                        console.warn('Bill added to rooms object but date is invalid for comparison:', bill);
+                    } else {
+                         console.warn('Skipping bill due to invalid date for comparison (existing room entry has valid date or is newer):', bill);
+                    }
+                }
+            } else {
+                console.warn('Skipping bill due to missing or invalid room identifier in displayableBills.forEach:', bill);
             }
         });
 
-        const sortedRooms = Object.values(rooms).sort((a, b) => a.room.localeCompare(b.room));
+        const sortedRooms = Object.values(rooms).sort((a, b) => {
+            // Add a check for a.room and b.room because if rooms contained an entry with undefined key, it would fail here.
+            // However, the check in forEach should prevent undefined keys.
+            if (a.room && b.room) {
+                return String(a.room).localeCompare(String(b.room));
+            } else if (a.room) {
+                return -1; // a comes first
+            } else if (b.room) {
+                return 1; // b comes first
+            }
+            return 0; // both are problematic
+        });
 
-        cardsContainer.innerHTML = sortedRooms.map(roomData => { // Changed variable name from room to roomData
+        cardsContainer.innerHTML = sortedRooms.map(roomData => {
             const totalAmount = Number(roomData.total || 0);
             const amountColor = getAmountColor(totalAmount);
-            const dueDateInfo = getDueDateInfo(room.dueDate);
+            const dueDateInfo = getDueDateInfo(roomData.dueDate);
+
+            // Defensive check for essential data that will be directly accessed.
+            // Crucially, roomData.room must exist for the onclick handler.
+            if (!roomData || typeof roomData.room === 'undefined') {
+                console.warn('Skipping card rendering for roomData because roomData.room is undefined:', roomData);
+                return ''; // Skip this card if no room identifier
+            }
 
             return `
-            <div class="bg-slate-800 rounded-2xl shadow-lg p-5 flex flex-col justify-between hover:bg-slate-700/50 transition-all border border-slate-700 hover:border-blue-500 cursor-pointer" onclick="viewRoomHistory('${room.room}')">
+            <div class="bg-slate-800 rounded-2xl shadow-lg p-5 flex flex-col justify-between hover:bg-slate-700/50 transition-all border border-slate-700 hover:border-blue-500 cursor-pointer" onclick="viewRoomHistory('${roomData.room}')">
                 <div>
                     <div class="flex justify-between items-start">
-                        <span class="text-3xl font-bold text-blue-400">${room.room}</span>
+                        <span class="text-3xl font-bold text-blue-400">${roomData.room}</span>
                         <div class="text-xs text-gray-400 text-right">
                             <span>อัปเดตล่าสุด</span><br>
-                            <span>${room.date}</span>
+                            <span>${roomData.date || 'N/A'}</span> {/* Added default for date */}
                         </div>
                     </div>
-                    <p class="text-lg text-white font-semibold mt-2 truncate">${room.name || 'ไม่มีชื่อ'}</p>
+                    <p class="text-lg text-white font-semibold mt-2 truncate">${roomData.name || 'ไม่มีชื่อ'}</p>
                 </div>
                 <div class="mt-4 pt-4 border-t border-slate-700 space-y-2">
                      <div class="flex justify-between items-center text-sm">
                         <span class="text-gray-400">จำนวนหน่วย:</span>
-                        <span class="text-white font-semibold">${room.units} หน่วย</span>
+                        <span class="text-white font-semibold">${roomData.units || 'N/A'} หน่วย</span>
                     </div>
                     <div class="flex justify-between items-center text-sm">
                         <span class="text-gray-400">หน่วยละ:</span>
-                        <span class="text-white font-semibold">${Number(room.rate || 0).toFixed(2)} ฿</span>
+                        <span class="text-white font-semibold">${Number(roomData.rate || 0).toFixed(2)} ฿</span>
                     </div>
                 </div>
                 <div class="mt-4 pt-4 border-t border-slate-700 space-y-2">
                     <div class="flex justify-between items-center text-sm">
                         <span class="text-gray-400">ค่าน้ำ (หน่วย):</span>
-                        <span class="text-cyan-400 font-semibold">${room.waterUnits || '-'} หน่วย</span>
+                        <span class="text-cyan-400 font-semibold">${roomData.waterUnits || '-'} หน่วย</span>
                     </div>
                     <div class="flex justify-between items-center text-sm">
                         <span class="text-gray-400">ค่าน้ำ (บาท):</span>
-                        <span class="text-sky-400 font-semibold">฿${Number(room.waterTotal || 0).toLocaleString()}</span>
+                        <span class="text-sky-400 font-semibold">฿${Number(roomData.waterTotal || 0).toLocaleString()}</span>
                     </div>
                 </div>
                  <div class="mt-4 pt-4 border-t border-slate-700 text-center">
