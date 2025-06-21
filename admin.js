@@ -1,5 +1,6 @@
 // Admin panel functionality
 let users = [];
+let filteredUsers = [];
 let stats = {
     totalUsers: 0,
     totalRooms: 0,
@@ -9,8 +10,18 @@ let stats = {
 
 // Check admin permission
 async function checkAdminPermission() {
-    await authUtils.checkAuth();
-    if (!authUtils.hasPermission('canManageUsers')) {
+    const user = await checkAuth();
+    if (!user) {
+        window.location.href = 'login.html';
+        return false;
+    }
+    
+    // Set global variables
+    window.currentUser = user;
+    window.userRole = user.role;
+    window.currentUserRole = user.role;
+    
+    if (!hasPermission('canManageUsers')) {
         window.location.href = 'home.html';
         return false;
     }
@@ -56,10 +67,13 @@ async function loadUsers() {
         
         users = Object.entries(usersData).map(([uid, userData]) => ({
             uid,
-            ...userData
+            ...userData,
+            status: userData.status || 'active' // Default to active if not set
         }));
         
+        filteredUsers = [...users];
         renderUsersTable();
+        updateUsersStats();
         
     } catch (error) {
         console.error('Error loading users:', error);
@@ -67,45 +81,93 @@ async function loadUsers() {
     }
 }
 
+// Update users statistics
+function updateUsersStats() {
+    const activeUsers = users.filter(user => user.status === 'active').length;
+    const adminUsers = users.filter(user => user.role === 'admin').length;
+    
+    document.getElementById('total-users').textContent = users.length;
+    document.getElementById('total-admins').textContent = adminUsers;
+}
+
+// Filter users
+function filterUsers() {
+    const searchTerm = document.getElementById('search-users').value.toLowerCase();
+    const roleFilter = document.getElementById('filter-role').value;
+    
+    filteredUsers = users.filter(user => {
+        const matchesSearch = user.name.toLowerCase().includes(searchTerm) || 
+                            user.email.toLowerCase().includes(searchTerm);
+        const matchesRole = !roleFilter || user.role === roleFilter;
+        
+        return matchesSearch && matchesRole;
+    });
+    
+    renderUsersTable();
+}
+
 // Render users table
 function renderUsersTable() {
     const tbody = document.getElementById('users-table-body');
+    const emptyState = document.getElementById('users-empty-state');
+    
+    if (filteredUsers.length === 0) {
+        tbody.innerHTML = '';
+        emptyState.classList.remove('hidden');
+        return;
+    }
+    
+    emptyState.classList.add('hidden');
     tbody.innerHTML = '';
     
-    users.forEach(user => {
+    filteredUsers.forEach(user => {
         const row = document.createElement('tr');
         row.className = 'border-b border-white/10 hover:bg-white/5 transition-colors';
         
         const roleIcon = getRoleIcon(user.role);
         const roleColor = getRoleColor(user.role);
-        const createdAt = new Date(user.createdAt).toLocaleDateString('th-TH');
+        const statusColor = getStatusColor(user.status);
+        const createdAt = user.createdAt ? new Date(user.createdAt).toLocaleDateString('th-TH') : 'ไม่ระบุ';
         
         row.innerHTML = `
             <td class="py-3 px-4">
-                <div class="w-10 h-10 rounded-full bg-gray-600 flex items-center justify-center">
+                <div class="w-10 h-10 rounded-full bg-gray-600 flex items-center justify-center relative">
                     ${user.profileImage ? 
                         `<img src="${user.profileImage}" alt="Profile" class="w-10 h-10 rounded-full object-cover">` :
                         `<i class="fas fa-user text-white/70"></i>`
                     }
+                    <div class="absolute -bottom-1 -right-1 w-4 h-4 ${statusColor} rounded-full border-2 border-slate-800"></div>
                 </div>
             </td>
-            <td class="py-3 px-4 text-white">${user.name}</td>
+            <td class="py-3 px-4 text-white">${user.name || 'ไม่ระบุ'}</td>
             <td class="py-3 px-4 text-white/80">${user.email}</td>
             <td class="py-3 px-4">
                 <span class="px-2 py-1 rounded-full text-xs font-medium ${roleColor}">
-                    ${roleIcon} ${user.role}
+                    ${roleIcon} ${getRoleText(user.role)}
                 </span>
             </td>
             <td class="py-3 px-4 text-white/70">${createdAt}</td>
             <td class="py-3 px-4">
+                <span class="px-2 py-1 rounded-full text-xs font-medium ${getStatusBadgeColor(user.status)}">
+                    ${getStatusText(user.status)}
+                </span>
+            </td>
+            <td class="py-3 px-4">
                 <div class="flex space-x-2">
                     <button onclick="editUser('${user.uid}')" 
-                            class="px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded text-sm transition-colors">
-                        <i class="fas fa-edit mr-1"></i>แก้ไข
+                            class="px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded text-sm transition-colors" 
+                            title="แก้ไขผู้ใช้">
+                        <i class="fas fa-edit"></i>
+                    </button>
+                    <button onclick="toggleUserStatus('${user.uid}')" 
+                            class="px-3 py-1 ${user.status === 'active' ? 'bg-orange-500 hover:bg-orange-600' : 'bg-green-500 hover:bg-green-600'} text-white rounded text-sm transition-colors" 
+                            title="${user.status === 'active' ? 'ปิดใช้งาน' : 'เปิดใช้งาน'}">
+                        <i class="fas fa-${user.status === 'active' ? 'ban' : 'check'}"></i>
                     </button>
                     <button onclick="deleteUser('${user.uid}')" 
-                            class="px-3 py-1 bg-red-500 hover:bg-red-600 text-white rounded text-sm transition-colors">
-                        <i class="fas fa-trash mr-1"></i>ลบ
+                            class="px-3 py-1 bg-red-500 hover:bg-red-600 text-white rounded text-sm transition-colors" 
+                            title="ลบผู้ใช้">
+                        <i class="fas fa-trash"></i>
                     </button>
                 </div>
             </td>
@@ -137,8 +199,49 @@ function getRoleColor(role) {
     }
 }
 
+// Get role text
+function getRoleText(role) {
+    switch (role) {
+        case 'admin': return 'ผู้ดูแลระบบ';
+        case 'user': return 'ผู้ใช้งานทั่วไป';
+        case '1': return 'ระดับ 1';
+        case '2': return 'ระดับ 2';
+        default: return 'ไม่ระบุ';
+    }
+}
+
+// Get status color (for status indicator dot)
+function getStatusColor(status) {
+    switch (status) {
+        case 'active': return 'bg-green-500';
+        case 'inactive': return 'bg-red-500';
+        case 'pending': return 'bg-yellow-500';
+        default: return 'bg-gray-500';
+    }
+}
+
+// Get status badge color
+function getStatusBadgeColor(status) {
+    switch (status) {
+        case 'active': return 'bg-green-500/20 text-green-400 border border-green-500/30';
+        case 'inactive': return 'bg-red-500/20 text-red-400 border border-red-500/30';
+        case 'pending': return 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30';
+        default: return 'bg-gray-500/20 text-gray-400 border border-gray-500/30';
+    }
+}
+
+// Get status text
+function getStatusText(status) {
+    switch (status) {
+        case 'active': return 'ใช้งานได้';
+        case 'inactive': return 'ระงับการใช้งาน';
+        case 'pending': return 'รอการยืนยัน';
+        default: return 'ไม่ระบุ';
+    }
+}
+
 // Add new user
-async function addUser(name, email, password, role) {
+async function addUser(name, email, password, role, status = 'active') {
     try {
         // Create user in Firebase Auth
         const userCredential = await auth.createUserWithEmailAndPassword(email, password);
@@ -149,6 +252,7 @@ async function addUser(name, email, password, role) {
             name: name,
             email: email,
             role: role,
+            status: status,
             createdAt: new Date().toISOString(),
             profileImage: null
         });
@@ -177,6 +281,31 @@ async function addUser(name, email, password, role) {
     }
 }
 
+// Toggle user status
+async function toggleUserStatus(uid) {
+    const user = users.find(u => u.uid === uid);
+    if (!user) return;
+    
+    const newStatus = user.status === 'active' ? 'inactive' : 'active';
+    const action = newStatus === 'active' ? 'เปิดใช้งาน' : 'ระงับการใช้งาน';
+    
+    if (!confirm(`คุณแน่ใจหรือไม่ที่จะ${action}ผู้ใช้นี้?`)) return;
+    
+    try {
+        await db.ref(`users/${uid}`).update({
+            status: newStatus,
+            updatedAt: new Date().toISOString()
+        });
+        
+        showAlert(`${action}ผู้ใช้สำเร็จ!`, 'success');
+        loadUsers();
+        
+    } catch (error) {
+        console.error('Error toggling user status:', error);
+        showAlert(`เกิดข้อผิดพลาดในการ${action}ผู้ใช้`, 'error');
+    }
+}
+
 // Edit user
 async function editUser(uid) {
     const user = users.find(u => u.uid === uid);
@@ -184,21 +313,24 @@ async function editUser(uid) {
     
     // Fill edit form
     document.getElementById('edit-user-id').value = uid;
-    document.getElementById('edit-user-name').value = user.name;
+    document.getElementById('edit-user-name').value = user.name || '';
     document.getElementById('edit-user-email').value = user.email;
     document.getElementById('edit-user-role').value = user.role;
+    document.getElementById('edit-user-status').value = user.status || 'active';
     
     // Show modal
     document.getElementById('edit-user-modal').classList.remove('hidden');
 }
 
 // Update user
-async function updateUser(uid, name, email, role) {
+async function updateUser(uid, name, email, role, status) {
     try {
         await db.ref(`users/${uid}`).update({
             name: name,
             email: email,
-            role: role
+            role: role,
+            status: status,
+            updatedAt: new Date().toISOString()
         });
         
         showAlert('อัปเดตผู้ใช้สำเร็จ!', 'success');
@@ -271,6 +403,11 @@ function hideModal(modalId) {
     document.getElementById(modalId).classList.add('hidden');
 }
 
+// Export functions for global use
+window.editUser = editUser;
+window.deleteUser = deleteUser;
+window.toggleUserStatus = toggleUserStatus;
+
 // Event listeners
 document.addEventListener('DOMContentLoaded', async () => {
     // Permission check
@@ -278,9 +415,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!hasPermission) return;
     
     // Set current user
-    const currentUser = authUtils.currentUser();
-    if (currentUser) {
-        document.getElementById('current-user').textContent = `ยินดีต้อนรับ, ${currentUser.email}`;
+    if (window.currentUser) {
+        document.getElementById('current-user').textContent = `ยินดีต้อนรับ, ${window.currentUser.email}`;
     }
     
     // Setup UI components like tabs
@@ -296,6 +432,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('roles-tab').addEventListener('click', () => switchTab('roles'));
     document.getElementById('reports-tab').addEventListener('click', () => switchTab('reports'));
     
+    // Search and filter functionality
+    document.getElementById('search-users').addEventListener('input', filterUsers);
+    document.getElementById('filter-role').addEventListener('change', filterUsers);
+    
     // Add user modal
     document.getElementById('add-user-btn').addEventListener('click', () => showModal('add-user-modal'));
     document.getElementById('close-add-user-modal').addEventListener('click', () => hideModal('add-user-modal'));
@@ -307,8 +447,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         const email = document.getElementById('new-user-email').value;
         const password = document.getElementById('new-user-password').value;
         const role = document.getElementById('new-user-role').value;
+        const status = document.getElementById('new-user-status').value;
         
-        await addUser(name, email, password, role);
+        await addUser(name, email, password, role, status);
         hideModal('add-user-modal');
         this.reset();
     });
@@ -323,8 +464,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         const name = document.getElementById('edit-user-name').value;
         const email = document.getElementById('edit-user-email').value;
         const role = document.getElementById('edit-user-role').value;
+        const status = document.getElementById('edit-user-status').value;
         
-        await updateUser(uid, name, email, role);
+        await updateUser(uid, name, email, role, status);
         hideModal('edit-user-modal');
     });
     
@@ -341,9 +483,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 // Export functions for global use
 window.editUser = editUser;
 window.deleteUser = deleteUser;
+window.toggleUserStatus = toggleUserStatus;
 
 function setupTabs() {
-    // ... existing code ...
+    // Show users tab by default
+    switchTab('users');
 }
 
 // --- Report Generator ---
@@ -427,4 +571,4 @@ async function handleReportGeneration(event) {
         console.error("Error fetching report data:", error);
         errorEl.textContent = 'เกิดข้อผิดพลาดในการค้นหาข้อมูล';
     }
-} 
+}
