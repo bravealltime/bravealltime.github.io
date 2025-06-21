@@ -770,7 +770,7 @@ function generateQRCode(record) {
         return;
     }
 
-    const promptPayId = '0864186891'; // Replace with your phone number or national ID
+    const promptPayId = '1209701792030'
     const amount = parseFloat(record.total);
     const canGenerateQR = !isNaN(amount) && amount > 0;
     let qrCodeImage = '';
@@ -806,52 +806,69 @@ function generateQRCode(record) {
         const monthName = !isNaN(billDate.getTime()) ? thaiMonths[billDate.getMonth()] : "";
         const year = !isNaN(billDate.getTime()) ? billDate.getFullYear() + 543 : "";
 
-        const summaryText = `ค่าไฟห้อง ${record.room} ${record.name || ''} เดือน ${monthName} ${year} ฿${parseFloat(record.total).toFixed(2)} บาท (${record.units} หน่วย หน่วยละ ${parseFloat(record.rate).toFixed(2)} บาท)`;
+        const summaryText = `ค่าไฟห้อง ${record.room} (${record.name || ''}) ประจำเดือน ${monthName} ${year}`;
 
         // 3. Build the receipt HTML
         const receiptContainer = document.getElementById('receipt-container');
         receiptContainer.innerHTML = `
-            <div id="receipt-content" class="bg-slate-800 text-white rounded-xl p-6 shadow-2xl" style="font-family: 'Kanit', sans-serif; max-width: 380px; margin: auto;">
-                <div class="text-center mb-4">
-                    <h3 class="text-2xl font-bold" style="color: #94a9ff;">ผลการคำนวณค่าไฟ</h3>
-                    <p class="text-lg font-semibold text-slate-200 mt-1">ห้อง ${record.room} - ${record.name || 'ไม่มีชื่อ'}</p>
-                    <p class="text-sm text-slate-400">วันที่จด: ${displayDate}</p>
+            <div id="receipt-content" class="bg-white text-gray-800 rounded-lg p-6 shadow-lg" style="font-family: 'Kanit', sans-serif; max-width: 400px; margin: auto;">
+                <div class="text-center mb-6">
+                    <h3 class="text-xl font-bold text-gray-900">ใบแจ้งค่าไฟฟ้า</h3>
+                    <p class="text-gray-500 text-sm">${summaryText}</p>
+                </div>
+
+                <div class="bg-gray-50 rounded-lg p-4 mb-4">
+                    <p class="text-sm text-gray-600">ห้อง</p>
+                    <p class="text-2xl font-bold text-indigo-600">${record.room} - ${record.name || 'ไม่มีชื่อ'}</p>
+                     <p class="text-sm text-gray-500 mt-2">วันที่จด: ${displayDate}</p>
                 </div>
                 
-                <div class="border-t border-b border-slate-700 py-3 my-4 space-y-2 text-sm">
-                    <div class="flex justify-between text-slate-200"><span>ค่ามิเตอร์ปัจจุบัน</span> <span class="font-mono font-medium">${record.current} หน่วย</span></div>
-                    <div class="flex justify-between text-slate-200"><span>ค่ามิเตอร์ครั้งที่แล้ว</span> <span class="font-mono font-medium">${record.previous} หน่วย</span></div>
-                    <div class="flex justify-between text-slate-200"><span>จำนวนหน่วยที่ใช้</span> <span class="font-mono font-semibold">${record.units} หน่วย</span></div>
-                    <div class="flex justify-between text-slate-200"><span>อัตราค่าไฟต่อหน่วย</span> <span class="font-mono font-medium">${parseFloat(record.rate).toFixed(2)} บาท</span></div>
+                <div class="border-t border-gray-200 pt-4 mt-4 space-y-2 text-sm">
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">ค่ามิเตอร์ปัจจุบัน:</span>
+                        <span class="font-mono font-medium">${record.current} หน่วย</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">ค่ามิเตอร์ครั้งที่แล้ว:</span>
+                        <span class="font-mono font-medium">${record.previous} หน่วย</span>
+                    </div>
+                     <div class="flex justify-between font-semibold text-base pt-1">
+                        <span class="text-gray-700">จำนวนหน่วยที่ใช้:</span>
+                        <span class="font-mono text-indigo-600">${record.units} หน่วย</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">อัตราค่าไฟต่อหน่วย:</span>
+                        <span class="font-mono font-medium">${parseFloat(record.rate).toFixed(2)} บาท</span>
+                    </div>
                 </div>
 
-                <div class="bg-blue-200 rounded-lg p-4 my-4 text-center">
-                    <p class="text-base font-semibold text-blue-800">ค่าไฟทั้งหมด</p>
-                    <h2 class="text-5xl font-bold text-blue-900 tracking-tight my-1">฿${parseFloat(record.total).toFixed(2)}</h2>
-                    <p class="text-sm font-medium text-blue-700">(${record.units} หน่วย หน่วยละ ${parseFloat(record.rate).toFixed(2)} บาท)</p>
+                <div class="bg-indigo-50 rounded-lg p-4 mt-6 text-center">
+                    <p class="text-sm font-semibold text-indigo-800">ยอดชำระทั้งหมด</p>
+                    <h2 class="text-4xl font-bold text-indigo-900 tracking-tight my-1">฿${parseFloat(record.total).toFixed(2)}</h2>
                 </div>
 
-                <div class="text-xs text-slate-400 my-4 text-center px-2">
-                    <p>${summaryText}</p>
-                </div>
-
-                <div class="flex flex-col items-center justify-center mt-4">
+                <div class="flex flex-col items-center justify-center mt-6">
                     ${qrCodeImage}
                     ${qrCodeCaption}
+                </div>
+
+                 <div class="text-xs text-gray-400 mt-6 text-center border-t border-gray-200 pt-2">
+                    <p>กรุณาชำระเงินภายในวันที่กำหนด</p>
                 </div>
             </div>
         `;
         
-        // 4. Setup download button visibility
+        // 4. Setup download button and background color for canvas
         const downloadBtn = document.getElementById('download-qr-btn');
-        downloadBtn.style.display = 'flex'; // Always show button, but disable if no QR
+        downloadBtn.style.display = 'flex';
+        const receiptElement = document.getElementById('receipt-content');
+        const canvasBgColor = window.getComputedStyle(receiptElement).backgroundColor;
 
         downloadBtn.onclick = () => {
-            const receiptElement = document.getElementById('receipt-content');
             if (window.html2canvas) {
                 html2canvas(receiptElement, { 
                     scale: 3, 
-                    backgroundColor: receiptBgColor,
+                    backgroundColor: canvasBgColor,
                     useCORS: true
                 }).then(canvas => {
                     const link = document.createElement('a');
