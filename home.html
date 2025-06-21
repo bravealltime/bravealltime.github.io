@@ -11,12 +11,29 @@
         body { font-family: 'Kanit', sans-serif; }
     </style>
 </head>
-<body class="bg-slate-900 min-h-screen">
+<body class="bg-slate-900 min-h-screen requires-auth">
+    <!-- Navigation -->
+    <nav class="bg-slate-800 border-b border-slate-700">
+        <div class="container mx-auto px-4 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-4">
+                    <h1 class="text-2xl font-bold text-white">Electricity Bill Calculator</h1>
+                </div>
+                <div id="auth-container" class="flex items-center space-x-4">
+                    <!-- This will be populated by auth.js -->
+                </div>
+            </div>
+        </div>
+    </nav>
+
     <header class="pt-10 pb-4 text-center text-3xl font-extrabold text-white tracking-wide">รายการห้องเช่า</header>
-    <div class="flex justify-center mb-8">
+    <div class="flex justify-center items-center gap-4 mb-8">
         <button id="btn-add-room" class="px-8 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-full font-bold text-lg shadow flex items-center gap-2 transition-all duration-200 border border-blue-600">
             <i class="fas fa-plus"></i> สร้างรายการใหม่
         </button>
+        <div id="admin-tools">
+            <!-- Admin-only buttons will be injected here by auth.js -->
+        </div>
     </div>
     <main>
         <section id="home-room-cards" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8 justify-center p-8">
@@ -69,6 +86,7 @@
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-analytics-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
     <script>
         // Firebase configuration
         const firebaseConfig = {
@@ -76,26 +94,38 @@
             authDomain: "electricity-bill-calcula-ea4a2.firebaseapp.com",
             databaseURL: "https://electricity-bill-calcula-ea4a2-default-rtdb.asia-southeast1.firebasedatabase.app",
             projectId: "electricity-bill-calcula-ea4a2",
-            storageBucket: "electricity-bill-calcula-ea4a2.firebasestorage.app",
+            storageBucket: "electricity-bill-calcula-ea4a2.appspot.com",
             messagingSenderId: "79440126022",
             appId: "1:79440126022:web:7ffbc16c6661bc75dc6a47",
             measurementId: "G-7JD6H3Q0PM"
         };
         let db;
         let analytics;
+        let auth;
         try {
             if (!firebase.apps.length) {
                 const app = firebase.initializeApp(firebaseConfig);
                 analytics = firebase.analytics(app);
             }
             db = firebase.database();
+            auth = firebase.auth();
         } catch (error) {
             console.error('Firebase initialization error:', error);
         }
     </script>
+    <script src="auth.js"></script>
     <script src="script.js"></script>
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('DOMContentLoaded', async function() {
+            // Check authentication
+            const isAuthenticated = await checkAuth();
+            if (!isAuthenticated) {
+                window.location.href = 'login.html';
+                return;
+            }
+            
+            // Update UI and render cards
+            updateAuthUI();
             renderHomeRoomCards();
         });
     </script>

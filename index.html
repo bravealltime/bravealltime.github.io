@@ -5,16 +5,224 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>คำนวณค่าไฟ</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-storage-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-analytics-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+    <style>
+        body { font-family: 'Kanit', sans-serif; }
+        /* Custom styles for flatpickr dark theme */
+        .flatpickr-calendar.dark {
+            background: #1e293b; /* bg-slate-800 */
+            border-color: #334155; /* border-slate-700 */
+        }
+        .flatpickr-calendar.dark .flatpickr-month,
+        .flatpickr-calendar.dark .flatpickr-weekday,
+        .flatpickr-calendar.dark .flatpickr-day {
+            color: #e2e8f0; /* text-slate-200 */
+        }
+        .flatpickr-calendar.dark .flatpickr-day.selected {
+            background: #3b82f6; /* bg-blue-600 */
+            border-color: #3b82f6;
+        }
+        .flatpickr-calendar.dark .flatpickr-day:hover {
+            background: #334155; /* bg-slate-700 */
+        }
+    </style>
+</head>
+<body class="bg-slate-900 min-h-screen text-slate-200 requires-auth">
+    <!-- Navigation Bar -->
+    <nav class="bg-slate-800 border-b border-slate-700 sticky top-0 z-40">
+        <div class="container mx-auto px-4 py-3">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-4">
+                    <a href="home.html" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-medium flex items-center shadow-md transition">
+                        <i class="fas fa-arrow-left mr-2"></i> กลับหน้าหลัก
+                    </a>
+                    <h1 id="room-header" class="text-xl font-bold text-white">ประวัติค่าไฟ</h1>
+                </div>
+                <div id="auth-container" class="flex items-center space-x-4">
+                    <!-- Auth buttons will be populated here -->
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mx-auto px-4 py-8">
+        <!-- Calculation Form Section -->
+        <section id="calculation-form" class="mb-8">
+            <div class="bg-slate-800 rounded-2xl p-6 shadow-lg border border-slate-700">
+                <h2 class="text-xl font-bold text-white mb-4">บันทึกค่าไฟรอบใหม่</h2>
+                <form class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-8 gap-4 items-end">
+                    <!-- Bill Date -->
+                    <div class="flex flex-col justify-end w-full">
+                        <label class="text-sm font-medium text-slate-300 mb-1">วันที่จด</label>
+                        <input type="text" id="bill-date" required placeholder="เลือกวันที่"
+                            class="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition text-center" />
+                    </div>
+                     <!-- Due Date -->
+                    <div class="flex flex-col justify-end w-full">
+                        <label class="text-sm font-medium text-slate-300 mb-1">วันครบกำหนด</label>
+                        <input type="text" id="due-date" required placeholder="เลือกวันที่"
+                            class="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition text-center" />
+                    </div>
+                    <!-- Current Reading -->
+                    <div class="flex flex-col justify-end w-full">
+                        <label class="text-sm font-medium text-slate-300 mb-1">เลขมิเตอร์ปัจจุบัน</label>
+                        <input type="number" id="current-reading" placeholder="เลขมิเตอร์" required min="0"
+                            class="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition text-center" />
+                    </div>
+                    <!-- Previous Reading -->
+                    <div class="flex flex-col justify-end w-full lg:col-span-1">
+                        <label class="text-sm font-medium text-slate-300 mb-1">ครั้งก่อน</label>
+                        <input type="number" id="previous-reading" readonly min="0"
+                            class="w-full px-4 py-2 bg-slate-700 border-slate-600 rounded-lg cursor-not-allowed text-center" />
+                    </div>
+                    <!-- Total Units (Household) -->
+                    <div class="flex flex-col justify-end w-full lg:col-span-1">
+                        <label class="text-sm font-medium text-slate-300 mb-1">หน่วยไฟรวม (บ้าน)</label>
+                        <input type="number" id="total-units" placeholder="หน่วยรวม" min="0" oninput="calculateRatePerUnit()" onpaste="calculateRatePerUnit()"
+                            class="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition text-center" />
+                    </div>
+                    <!-- Total Bill (Household) -->
+                    <div class="flex flex-col justify-end w-full lg:col-span-1">
+                        <label class="text-sm font-medium text-slate-300 mb-1">ค่าไฟรวม (บ้าน)</label>
+                        <input type="number" id="total-all" placeholder="ค่าไฟรวม" class="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition text-center" min="0" oninput="calculateRatePerUnit()" onpaste="calculateRatePerUnit()" />
+                    </div>
+                    <!-- Rate per Unit -->
+                    <div class="flex flex-col justify-end w-full lg:col-span-1">
+                        <label class="text-sm font-medium text-slate-300 mb-1">เรทต่อหน่วย</label>
+                        <input type="number" id="rate" step="0.01" value="0" required min="0" readonly
+                            class="w-full px-4 py-2 bg-slate-700 border-slate-600 rounded-lg cursor-not-allowed text-center" />
+                    </div>
+                    <!-- Calculate Button -->
+                    <div class="flex flex-col justify-end w-full">
+                        <button type="button" onclick="calculateBill()"
+                            class="h-[42px] w-full bg-blue-600 hover:bg-blue-700 rounded-lg font-bold text-base transition-all shadow-md flex-shrink-0 flex items-center justify-center">
+                            <i class="fas fa-calculator mr-2"></i>คำนวณ
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </section>
+
+        <!-- History Section -->
+        <section id="history-section" class="rounded-2xl bg-slate-800 p-6 shadow-lg border border-slate-700">
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
+                 <h2 class="text-xl font-bold text-white">ประวัติการคำนวณ</h2>
+                <div class="flex gap-2 justify-end w-full md:w-auto">
+                    <button id="sort-date" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-medium text-sm flex items-center gap-2 transition">
+                        <i class="fas fa-calendar-alt"></i> เรียงตามวันที่
+                    </button>
+                    <button id="sort-amount" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-medium text-sm flex items-center gap-2 transition">
+                        <i class="fas fa-sort-amount-up"></i> เรียงตามยอดเงิน
+                    </button>
+                </div>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full min-w-[800px] table-auto rounded-xl overflow-hidden">
+                    <thead class="bg-slate-900">
+                        <tr class="border-b border-slate-700">
+                            <th class="py-3 px-3 font-medium text-slate-300 text-sm text-center">วันที่</th>
+                            <th class="py-3 px-3 font-medium text-slate-300 text-sm text-center">เลขมิเตอร์ปัจจุบัน</th>
+                            <th class="py-3 px-3 font-medium text-slate-300 text-sm text-center">ครั้งที่แล้ว</th>
+                            <th class="py-3 px-3 font-medium text-slate-300 text-sm text-center">จำนวนหน่วย</th>
+                            <th class="py-3 px-3 font-medium text-slate-300 text-sm text-center">ค่าไฟ/หน่วย</th>
+                            <th class="py-3 px-3 font-medium text-slate-300 text-sm text-center">ค่าไฟ (ห้อง)</th>
+                            <th class="py-3 px-3 font-medium text-slate-300 text-sm text-center">ค่าไฟ (บ้าน)</th>
+                            <th class="py-3 px-3 font-medium text-slate-300 text-sm text-center">จัดการ</th>
+                        </tr>
+                    </thead>
+                    <tbody id="history-body" class="divide-y divide-slate-700">
+                        <!-- Data will be added by JavaScript -->
+                    </tbody>
+                </table>
+            </div>
+            <div id="pagination" class="flex justify-center mt-4 gap-2"></div>
+            <div id="no-history" class="hidden flex-grow items-center justify-center py-10">
+                <div class="text-center">
+                    <div class="text-slate-500 mb-2">
+                        <i class="fas fa-history text-4xl"></i>
+                    </div>
+                    <p class="text-slate-400">ยังไม่มีประวัติการคำนวณสำหรับห้องนี้</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Modals -->
+        <!-- Edit Modal -->
+        <div id="edit-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden items-center justify-center z-50">
+            <div class="bg-slate-800 border border-slate-700 rounded-2xl p-6 w-full max-w-md mx-4 shadow-lg">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-xl font-bold text-white">แก้ไขข้อมูล</h2>
+                    <button class="text-2xl text-slate-400 hover:text-white transition-colors" onclick="closeModal()">&times;</button>
+                </div>
+                <div class="space-y-4">
+                    <input type="hidden" id="edit-key" />
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-slate-300 mb-1">วันที่จด</label>
+                            <input type="text" id="edit-date" class="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition" />
+                        </div>
+                         <div>
+                            <label class="block text-sm font-medium text-slate-300 mb-1">วันครบกำหนด</label>
+                            <input type="text" id="edit-due-date" class="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition" />
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-300 mb-1">เลขมิเตอร์ปัจจุบัน</label>
+                        <input type="number" id="edit-current" class="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition" />
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-300 mb-1">ครั้งที่แล้ว</label>
+                        <input type="number" id="edit-previous" class="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition" />
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-300 mb-1">ค่าไฟรวม (บ้าน)</label>
+                         <input type="number" id="edit-total-all" class="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition" />
+                    </div>
+                     <div>
+                        <label class="block text-sm font-medium text-slate-300 mb-1">เรทต่อหน่วย</label>
+                        <input type="number" id="edit-rate" readonly class="w-full px-4 py-2 bg-slate-700 border-slate-600 rounded-lg cursor-not-allowed" />
+                    </div>
+                </div>
+                <button onclick="saveEdit()" class="w-full mt-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg font-bold text-base transition-all shadow-md">
+                    บันทึกการแก้ไข
+                </button>
+            </div>
+        </div>
+
+        <!-- Evidence Modal -->
+        <div id="evidence-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden items-center justify-center z-50">
+            <div class="bg-slate-800 border border-slate-700 rounded-2xl p-6 w-full max-w-md mx-4 relative shadow-lg">
+                <button class="absolute top-3 right-4 text-slate-400 hover:text-white text-2xl font-bold" onclick="closeEvidenceModal()">&times;</button>
+                <h2 class="text-xl font-bold text-white mb-4 text-center">แนบหลักฐานการชำระเงิน</h2>
+                <div id="evidence-dropzone" class="flex flex-col items-center justify-center border-2 border-dashed border-slate-600 rounded-xl bg-slate-900 p-6 cursor-pointer transition hover:bg-slate-700/50 w-full min-h-[170px] mb-4">
+                    <input type="file" id="evidence-image-input" accept="image/*" class="hidden" />
+                    <div id="evidence-preview" class="w-full flex flex-col items-center gap-2"></div>
+                    <div id="evidence-placeholder" class="flex flex-col items-center text-slate-400">
+                        <i class="fas fa-cloud-upload-alt text-4xl mb-2"></i>
+                        <span class="text-base">ลากไฟล์มาวาง หรือคลิกเพื่อเลือกไฟล์</span>
+                    </div>
+                </div>
+                <div id="upload-progress-container" class="w-full bg-slate-700 rounded-full h-2.5 mb-4 hidden">
+                    <div id="upload-progress-bar" class="bg-blue-600 h-2.5 rounded-full" style="width: 0%"></div>
+                </div>
+                <div id="evidence-error" class="text-red-400 text-sm text-center mb-2"></div>
+                <button id="evidence-save-btn" class="w-full py-3 bg-green-600 hover:bg-green-700 rounded-lg font-bold text-base transition-all shadow-md flex items-center justify-center gap-2" disabled>
+                    <i class="fas fa-save"></i> บันทึก
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase SDK initialization -->
     <script>
-        // Firebase configuration
         const firebaseConfig = {
             apiKey: "AIzaSyC2DvQt-VXfeEeip9thWXLKnstHmyx_eOk",
             authDomain: "electricity-bill-calcula-ea4a2.firebaseapp.com",
@@ -25,298 +233,72 @@
             appId: "1:79440126022:web:7ffbc16c6661bc75dc6a47",
             measurementId: "G-7JD6H3Q0PM"
         };
-
-        // Declare db variable in global scope
-        let db;
-        let analytics;
-
-        // Initialize Firebase with error handling
+        let db, analytics, auth;
         try {
-            // Check if Firebase is already initialized
             if (!firebase.apps.length) {
                 const app = firebase.initializeApp(firebaseConfig);
                 analytics = firebase.analytics(app);
             }
             db = firebase.database();
-            
-            // Test Firebase connection
-            db.ref('.info/connected').on('value', (snap) => {
-                if (snap.val() === true) {
-                    console.log('Firebase connected successfully');
-                } else {
-                    console.log('Firebase disconnected');
-                }
-            });
-
-            console.log('Firebase initialized successfully');
+            auth = firebase.auth();
         } catch (error) {
             console.error('Firebase initialization error:', error);
         }
     </script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        primary: '#2c3e50',
-                        secondary: '#3498db',
-                        accent: '#e74c3c',
-                        success: '#27ae60',
-                        dark: '#1a2a3a',
-                    },
-                    fontFamily: {
-                        kanit: ['Kanit', 'sans-serif'],
-                    },
-                }
-            }
-        }
-    </script>
-    <style>
-        body {
-            font-family: 'Kanit', sans-serif;
-        }
-    </style>
-</head>
-<body class="bg-gradient-to-br from-dark to-primary min-h-screen text-white">
-    <div class="container mx-auto px-4 py-8">
-        <!-- Header -->
-        <div class="flex justify-between items-center mb-8">
-            <h1 class="text-3xl font-medium">คำนวณค่าไฟ</h1>
-            <a href="home.html" class="absolute top-6 right-6 px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded-lg font-medium flex items-center shadow transition">
-                <i class="fas fa-arrow-left mr-2"></i> กลับ
-            </a>
-        </div>
-
-        <!-- Section: Home Room Cards -->
-        <section id="home-room-cards" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 p-6">
-            <!-- การ์ดห้องจะถูกเติมโดย JS -->
-        </section>
-
-        <!-- ฟอร์มคำนวณ (แนวนอน สมมาตร) -->
-        <div class="flex flex-col items-center w-full mb-8">
-            <div class="bg-white/5 backdrop-blur-lg rounded-2xl p-8 shadow-lg w-full max-w-full">
-                <form class="flex flex-col lg:flex-row gap-4 flex-1 items-end justify-center">
-                    <div class="flex flex-col justify-end w-full lg:w-[220px]">
-                        <label class="text-sm font-medium text-left mb-1">วันที่จดค่าไฟ</label>
-                        <input type="text" id="bill-date" required placeholder="DD/MM/YYYY"
-                            class="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg focus:border-secondary focus:ring-2 focus:ring-secondary/20 outline-none transition-all text-base text-center" />
-                    </div>
-                    <div class="flex flex-col justify-end w-full lg:w-[220px]">
-                        <label class="text-sm font-medium text-left mb-1">ค่าวัดไฟฟ้าปัจจุบัน</label>
-                        <input type="text" id="current-reading" placeholder="กรอกค่าวัดไฟฟ้าปัจจุบัน" required min="0"
-                            class="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg focus:border-secondary focus:ring-2 focus:ring-secondary/20 outline-none transition-all text-base text-center" />
-                    </div>
-                    <div class="flex flex-col justify-end w-full lg:w-[220px]">
-                        <label class="text-sm font-medium text-left mb-1">ค่าวัดไฟฟ้าครั้งที่แล้ว</label>
-                        <input type="text" id="previous-reading" readonly min="0"
-                            class="w-full px-4 py-2 bg-white/20 border-white/10 rounded-lg cursor-not-allowed text-base text-center" />
-                    </div>
-                    <div class="flex flex-col justify-end w-full lg:w-[220px]">
-                        <label class="text-sm font-medium text-left mb-1">อัตราค่าไฟต่อหน่วย (บาท)</label>
-                        <input type="text" id="rate" step="0.01" value="0" required min="0" oninput="calculateRatePerUnit()"
-                            class="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg focus:border-secondary focus:ring-2 focus:ring-secondary/20 outline-none transition-all text-base text-center" />
-                    </div>
-                    <div class="flex flex-col justify-end w-full lg:w-[220px]">
-                        <label class="text-sm font-medium text-left mb-1">หน่วยค่าไฟทั้งบ้าน</label>
-                        <input type="text" id="total-units" placeholder="กรอกหน่วยไฟทั้งบ้าน" min="0" oninput="calculateRatePerUnit()" onpaste="calculateRatePerUnit()"
-                            class="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg focus:border-secondary focus:ring-2 focus:ring-secondary/20 outline-none transition-all text-base text-center" />
-                    </div>
-                    <div class="flex flex-col justify-end w-full lg:w-[220px]">
-                        <label class="text-sm font-medium text-left mb-1">ราคาค่าไฟทั้งหมด (บาท)</label>
-                        <input type="text" id="total-all" placeholder="กรอกราคาค่าไฟทั้งหมด" class="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg focus:border-secondary focus:ring-2 focus:ring-secondary/20 outline-none transition-all text-base text-center" min="0" oninput="calculateRatePerUnit()" onpaste="calculateRatePerUnit()" />
-                    </div>
-                    <div class="flex flex-col justify-end w-full lg:w-[140px]">
-                        <label class="invisible mb-1">คำนวณ</label>
-                        <button type="button" onclick="calculateBill()"
-                            class="h-[42px] w-full bg-secondary hover:bg-secondary/90 rounded-lg font-medium text-base transition-all shadow-md flex-shrink-0">
-                            คำนวณ
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-
-        <!-- ประวัติการคำนวณ (อยู่ล่าง) -->
-        <section id="history-section" class="mt-8 rounded-2xl bg-slate-800/90 p-6 shadow-lg">
-            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
-                <div class="flex gap-2 justify-end w-full md:w-auto">
-                    <button id="sort-date" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-medium text-sm flex items-center gap-2 transition">
-                        <i class="fas fa-calendar-alt"></i> เรียงตามวันที่
-                    </button>
-                    <button id="sort-amount" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-medium text-sm flex items-center gap-2 transition">
-                        <i class="fas fa-sort-amount-up"></i> เรียงตามจำนวนเงิน
-                    </button>
-                </div>
-            </div>
-            <div class="overflow-y-auto flex-grow">
-                <table class="w-full table-fixed rounded-xl overflow-hidden">
-                    <thead class="sticky top-0 bg-dark/95 backdrop-blur-sm">
-                        <tr class="border-b border-white/10">
-                            <th class="py-3 px-3 font-medium text-white/70 text-sm text-center w-[110px]">วันที่</th>
-                            <th class="py-3 px-3 font-medium text-white/70 text-sm text-center w-[120px]">ค่าวัดปัจจุบัน</th>
-                            <th class="py-3 px-3 font-medium text-white/70 text-sm text-center w-[120px]">ค่าวัดครั้งที่แล้ว</th>
-                            <th class="py-3 px-3 font-medium text-white/70 text-sm text-center w-[110px]">จำนวนหน่วย</th>
-                            <th class="py-3 px-3 font-medium text-white/70 text-sm text-center w-[110px]">ค่าไฟต่อหน่วย</th>
-                            <th class="py-3 px-3 font-medium text-white/70 text-sm text-center w-[120px]">ค่าไฟทั้งหมด</th>
-                            <th class="py-3 px-3 font-medium text-white/70 text-sm text-center w-[120px]">ราคาค่าไฟทั้งหมด</th>
-                            <th class="py-3 px-3 font-medium text-white/70 text-sm text-center w-[100px]">จัดการ</th>
-                        </tr>
-                    </thead>
-                    <tbody id="history-body" class="divide-y divide-white/10">
-                        <!-- ข้อมูลจะถูกเพิ่มด้วย JavaScript -->
-                    </tbody>
-                </table>
-                <div id="pagination" class="flex justify-center mt-4 gap-2"></div>
-                <div id="inline-result"></div>
-            </div>
-            <div id="no-history" class="hidden flex-grow flex items-center justify-center">
-                <div class="text-center">
-                    <div class="text-white/50 mb-2">
-                        <i class="fas fa-history text-3xl"></i>
-                    </div>
-                    <p class="text-white/70 text-sm">ยังไม่มีประวัติการคำนวณ</p>
-                </div>
-            </div>
-        </section>
-
-        <!-- ผลการคำนวณ -->
-        <div id="result-section" class="hidden mt-8">
-            <div class="bg-white/5 backdrop-blur-lg rounded-2xl p-6 shadow-lg">
-                <h2 class="text-xl font-medium mb-6 text-center">ผลการคำนวณ</h2>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div class="bg-white/5 p-4 rounded-xl text-center hover:transform hover:-translate-y-1 transition-all">
-                        <span class="block text-sm text-white/70 mb-1">จำนวนหน่วยที่ใช้</span>
-                        <span id="units-used" class="text-2xl font-medium">0</span>
-                        <span class="text-sm text-white/70">หน่วย</span>
-                    </div>
-                    <div class="bg-white/5 p-4 rounded-xl text-center hover:transform hover:-translate-y-1 transition-all">
-                        <span class="block text-sm text-white/70 mb-1">ค่าไฟต่อหน่วย</span>
-                        <span id="rate-per-unit" class="text-2xl font-medium">0</span>
-                        <span class="text-sm text-white/70">บาท</span>
-                    </div>
-                    <div class="bg-success p-4 rounded-xl text-center hover:transform hover:-translate-y-1 transition-all">
-                        <span class="block text-sm text-white/70 mb-1">ค่าไฟทั้งหมด</span>
-                        <span id="total-bill" class="text-2xl font-medium">0</span>
-                        <span class="text-sm text-white/70">บาท</span>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Modal แก้ไขข้อมูล -->
-    <div id="edit-modal" class="fixed inset-0 bg-black/50 backdrop-blur-sm hidden items-center justify-center z-50">
-        <div class="bg-dark rounded-2xl p-6 w-full max-w-md mx-4">
-            <div class="flex justify-between items-center mb-6">
-                <h2 class="text-xl font-medium">แก้ไขข้อมูล</h2>
-                <button class="text-2xl hover:text-accent transition-colors" onclick="closeModal()">&times;</button>
-            </div>
-            <div class="space-y-6">
-                <div class="space-y-4">
-                    <div class="space-y-2">
-                        <label class="block text-sm font-medium">วันที่</label>
-                        <input type="text" id="edit-date" class="w-full px-4 py-3 bg-white/5 border-2 border-white/10 rounded-lg focus:border-secondary focus:ring-2 focus:ring-secondary/20 outline-none transition-all" />
-                    </div>
-                    <div class="space-y-2">
-                        <label class="block text-sm font-medium">ค่าปัจจุบัน</label>
-                        <input type="text" id="edit-current" class="w-full px-4 py-3 bg-white/5 border-2 border-white/10 rounded-lg focus:border-secondary focus:ring-2 focus:ring-secondary/20 outline-none transition-all" />
-                    </div>
-                    <div class="space-y-2">
-                        <label class="block text-sm font-medium">ค่าครั้งที่แล้ว</label>
-                        <input type="text" id="edit-previous" class="w-full px-4 py-3 bg-white/5 border-2 border-white/10 rounded-lg focus:border-secondary focus:ring-2 focus:ring-secondary/20 outline-none transition-all" />
-                    </div>
-                    <div class="space-y-2">
-                        <label class="block text-sm font-medium">อัตราค่าไฟต่อหน่วย</label>
-                        <input type="text" id="edit-rate" class="w-full px-4 py-3 bg-white/5 border-2 border-white/10 rounded-lg focus:border-secondary focus:ring-2 focus:ring-secondary/20 outline-none transition-all" />
-                    </div>
-                    <div class="space-y-2">
-                        <label class="block text-sm font-medium">ราคาค่าไฟทั้งหมด</label>
-                        <input type="text" id="edit-total-all" class="w-full px-4 py-3 bg-white/5 border-2 border-white/10 rounded-lg focus:border-secondary focus:ring-2 focus:ring-secondary/20 outline-none transition-all" min="0" />
-                    </div>
-                </div>
-                <div class="flex flex-col items-center w-full">
-                    <div id="edit-evidence-dropzone" class="flex flex-col items-center justify-center border-2 border-dashed border-blue-400 rounded-xl bg-white/10 p-6 cursor-pointer transition hover:bg-blue-50/30 w-full max-w-full min-h-[170px] shadow-md">
-                        <label class="block text-base font-medium mb-2 text-center text-blue-500">แนบรูปภาพหลักฐาน</label>
-                        <input type="file" id="edit-evidence-image" accept="image/*" class="hidden" />
-                        <div id="edit-evidence-preview" class="w-full flex flex-col items-center gap-2"></div>
-                        <div id="edit-evidence-placeholder" class="flex flex-col items-center text-blue-400">
-                            <i class="fas fa-cloud-upload-alt text-4xl mb-2"></i>
-                            <i class="fas fa-cloud-upload-alt text-3xl mb-2"></i>
-                            <span class="text-sm">ลากไฟล์รูปมาวาง หรือคลิกเพื่อเลือกไฟล์</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <button onclick="saveEdit()"
-                class="w-full py-3 bg-success hover:bg-success/90 rounded-lg font-medium transition-all transform hover:-translate-y-0.5 active:translate-y-0 mt-6">
-                บันทึก
-            </button>
-        </div>
-    </div>
-
-    <!-- Modal แสดงผลการคำนวณ -->
-    <div id="result-modal" class="fixed inset-0 bg-black/50 backdrop-blur-sm hidden items-center justify-center z-50">
-        <div class="bg-white/10 backdrop-blur-lg rounded-2xl p-6 shadow-lg w-full max-w-md mx-4">
-            <div class="flex justify-between items-center mb-4">
-                <h2 class="text-xl font-semibold text-white">ผลการคำนวณ</h2>
-                <button onclick="closeResultModal()" class="text-white/60 hover:text-white transition-colors">
-                    <i class="fas fa-times text-xl"></i>
-                </button>
-            </div>
-            <div id="result-modal-content" class="text-white">
-                <!-- เนื้อหาจะถูกเพิ่มด้วย JavaScript -->
-            </div>
-        </div>
-    </div>
-
-    <!-- Modal แนบรูปภาพหลักฐาน -->
-    <div id="evidence-modal" class="fixed inset-0 bg-black/50 backdrop-blur-sm hidden items-center justify-center z-50">
-        <div class="bg-dark rounded-2xl p-6 w-full max-w-md mx-4 relative">
-            <button class="absolute top-4 right-4 text-gray-400 hover:text-red-500 text-2xl font-bold" onclick="closeEvidenceModal()">&times;</button>
-            <h2 class="text-xl font-semibold mb-4 text-center">แนบรูปภาพหลักฐาน</h2>
-            <div id="evidence-dropzone" class="flex flex-col items-center justify-center border-2 border-dashed border-blue-400 rounded-xl bg-white/10 p-6 cursor-pointer transition hover:bg-blue-50/30 w-full max-w-full min-h-[170px] shadow-md mb-4">
-                <input type="file" id="evidence-image-input" accept="image/*" class="hidden" />
-                <div id="evidence-preview" class="w-full flex flex-col items-center gap-2"></div>
-                <div id="evidence-placeholder" class="flex flex-col items-center text-blue-400">
-                    <i class="fas fa-cloud-upload-alt text-4xl mb-2"></i>
-                    <span class="text-base">ลากไฟล์รูปมาวาง หรือคลิกเพื่อเลือกไฟล์</span>
-                </div>
-            </div>
-            <div class="flex gap-4 mt-4">
-                <button id="evidence-save-btn" class="flex-1 py-2 bg-success hover:bg-success/90 rounded-lg font-medium text-lg transition-all shadow-md">บันทึก</button>
-                <button onclick="closeEvidenceModal()" class="flex-1 py-2 bg-gray-500 hover:bg-gray-600 rounded-lg font-medium text-lg transition-all shadow-md">ยกเลิก</button>
-            </div>
-        </div>
-    </div>
-
+    <!-- Your other scripts -->
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
-    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-    <script src="promptpay.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/qrious@4.0.2/dist/qrious.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.5.0/qrcode.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/thai-qr-code@1.0.0/thai-qr-code.min.js"></script>
+    <script src="auth.js"></script>
     <script src="script.js"></script>
     <script>
-    flatpickr("#bill-date", {
-        dateFormat: "d/m/Y",
-        allowInput: true,
-        locale: "th"
-    });
-    flatpickr("#edit-date", {
-        dateFormat: "d/m/Y",
-        allowInput: true,
-        locale: "th"
-    });
-    function calculateRatePerUnit() {
-        const totalAll = parseFloat(document.getElementById('total-all').value);
-        const totalUnits = parseFloat(document.getElementById('total-units').value);
-        const rateInput = document.getElementById('rate');
-        if (!isNaN(totalAll) && !isNaN(totalUnits) && totalUnits > 0) {
-            rateInput.value = (totalAll / totalUnits).toFixed(2);
-        } else {
-            rateInput.value = 0;
+         document.addEventListener('DOMContentLoaded', () => {
+            flatpickr("#bill-date", {
+                dateFormat: "d/m/Y",
+                defaultDate: "today",
+                theme: "dark"
+            });
+
+            const params = new URLSearchParams(window.location.search);
+            const room = params.get('room');
+            if (room) {
+                const roomHeader = document.getElementById('room-header');
+                if(roomHeader) roomHeader.textContent = `ประวัติค่าไฟ - ห้อง ${room}`;
+            }
+
+             // Initialize edit modal date picker
+            flatpickr("#edit-date", {
+                dateFormat: "d/m/Y",
+                theme: "dark"
+            });
+            flatpickr("#edit-due-date", {
+                dateFormat: "d/m/Y",
+                theme: "dark"
+            });
+            
+             // Initialize form date pickers
+            flatpickr("#bill-date", {
+                dateFormat: "d/m/Y",
+                defaultDate: "today",
+                theme: "dark"
+            });
+            flatpickr("#due-date", {
+                dateFormat: "d/m/Y",
+                defaultDate: new Date().fp_incr(15), // Default to 15 days from now
+                theme: "dark"
+            });
+        });
+
+        function calculateRatePerUnit() {
+            const totalUnits = parseFloat(document.getElementById('total-units').value);
+            const totalBill = parseFloat(document.getElementById('total-all').value);
+            const rateInput = document.getElementById('rate');
+
+            if(totalUnits > 0 && totalBill > 0) {
+                const rate = totalBill / totalUnits;
+                rateInput.value = rate.toFixed(4);
+            } else {
+                rateInput.value = 0;
+            }
         }
-    }
     </script>
 </body>
 </html> 
