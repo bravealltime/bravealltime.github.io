@@ -221,10 +221,13 @@ async function renderHistoryTable(room) {
                             `<button onclick='generateQRCode(${JSON.stringify(bill)})' class="text-purple-400 hover:text-purple-300 transition-colors" title="สร้าง QR Code ชำระเงิน"><i class="fas fa-qrcode"></i></button>` : ''
                         }
                         ${hasPermission('canUploadEvidence') ? 
-                            (bill.evidenceUrl ?
-                                `<a href="${bill.evidenceUrl}" target="_blank" class="text-blue-400 hover:text-blue-300 transition-colors" title="ดูหลักฐาน"><i class="fas fa-eye"></i></a>` :
-                                `<button onclick="openEvidenceModal('${bill.key}')" class="text-blue-400 hover:text-blue-300 transition-colors" title="แนบหลักฐาน"><i class="fas fa-eye"></i></button>`
-                            ) : ''
+                            `<button onclick="openEvidenceModal('${bill.key}')" class="text-green-400 hover:text-green-300 transition-colors" title="แนบหลักฐาน"><i class="fas fa-upload"></i></button>` : ''
+                        }
+                        ${bill.evidenceUrl ? 
+                            `<button onclick="viewEvidence('${bill.evidenceUrl}', '${bill.evidenceFileName || 'หลักฐานการชำระเงิน'}')" class="text-blue-400 hover:text-blue-300 transition-colors" title="ดูหลักฐาน"><i class="fas fa-eye"></i></button>` : ''
+                        }
+                        ${hasPermission('canUploadEvidence') && bill.evidenceUrl ? 
+                            `<button onclick="deleteEvidence('${bill.key}')" class="text-orange-400 hover:text-orange-300 transition-colors" title="ลบหลักฐาน"><i class="fas fa-trash-alt"></i></button>` : ''
                         }
                         ${hasPermission('canEditAllBills') ? 
                             `<button onclick="openEditModal('${bill.key}')" class="text-blue-400 hover:text-blue-300 transition-colors" title="แก้ไข"><i class="fas fa-edit"></i></button>` : ''
@@ -778,6 +781,30 @@ function closeModal() {
     modal.classList.remove('flex');
 }
 
+function viewEvidence(url, fileName = 'หลักฐานการชำระเงิน') {
+    console.log('=== viewEvidence started ===');
+    console.log('Evidence URL:', url);
+    console.log('File name:', fileName);
+    
+    if (!url) {
+        showAlert('ไม่พบหลักฐานที่ต้องการดู', 'error');
+        return;
+    }
+    
+    // Open evidence in new tab
+    try {
+        const newWindow = window.open(url, '_blank');
+        if (!newWindow) {
+            showAlert('ไม่สามารถเปิดหลักฐานได้ กรุณาตรวจสอบการตั้งค่า popup blocker', 'error');
+        }
+    } catch (error) {
+        console.error('Error opening evidence:', error);
+        showAlert('เกิดข้อผิดพลาดในการเปิดหลักฐาน', 'error');
+    }
+    
+    console.log('=== viewEvidence ended ===');
+}
+
 function openEvidenceModal(key) {
     console.log('=== openEvidenceModal started ===');
     console.log('Key parameter:', key);
@@ -851,6 +878,12 @@ function openEvidenceModal(key) {
         modal.classList.remove('hidden');
         modal.classList.add('flex');
         console.log('Modal opened successfully');
+        
+        // Update modal title to show this is for uploading new evidence
+        const modalTitle = modal.querySelector('h2');
+        if (modalTitle) {
+            modalTitle.textContent = 'แนบหลักฐานการชำระเงิน (ใหม่)';
+        }
     } else {
         console.error('Modal element not found!');
     }
@@ -1621,4 +1654,75 @@ function downloadQRCode() {
     link.download = `qr-payment-room-${document.getElementById('qr-room-info').textContent.replace(/\s/g, '-')}.png`;
     link.href = canvas.toDataURL();
     link.click();
+}
+
+async function deleteEvidence(key) {
+    console.log('=== deleteEvidence started ===');
+    console.log('Key parameter:', key);
+    
+    if (!hasPermission('canUploadEvidence')) {
+        showAlert('คุณไม่มีสิทธิ์ลบหลักฐาน', 'error');
+        return;
+    }
+    
+    if (!key) {
+        showAlert('ไม่พบข้อมูลที่ต้องการลบหลักฐาน', 'error');
+        return;
+    }
+    
+    // Confirm deletion
+    if (!confirm('คุณแน่ใจหรือไม่ว่าต้องการลบหลักฐานนี้? การกระทำนี้ไม่สามารถย้อนกลับได้')) {
+        return;
+    }
+    
+    try {
+        // Get current evidence data
+        const snapshot = await db.ref(`electricityData/${key}`).once('value');
+        const data = snapshot.val();
+        
+        if (!data || !data.evidenceUrl) {
+            showAlert('ไม่พบหลักฐานที่ต้องการลบ', 'error');
+            return;
+        }
+        
+        // Delete from Firebase Storage if URL exists
+        if (data.evidenceUrl && firebase.storage) {
+            try {
+                const storageRef = firebase.storage().refFromURL(data.evidenceUrl);
+                await storageRef.delete();
+                console.log('Evidence file deleted from storage');
+            } catch (storageError) {
+                console.error('Error deleting from storage:', storageError);
+                // Continue with database update even if storage deletion fails
+            }
+        }
+        
+        // Update database to remove evidence references
+        await db.ref(`electricityData/${key}`).update({
+            evidenceUrl: null,
+            evidenceFileName: null,
+            evidenceFileSize: null,
+            evidenceFileType: null,
+            evidenceUploadedAt: null,
+            evidenceUploadedBy: null,
+            evidenceDeletedAt: new Date().toISOString(),
+            evidenceDeletedBy: auth.currentUser?.uid || 'unknown'
+        });
+        
+        showAlert('ลบหลักฐานเรียบร้อยแล้ว', 'success');
+        
+        // Refresh the table
+        const room = new URLSearchParams(window.location.search).get('room');
+        if (room) {
+            renderHistoryTable(room);
+        } else {
+            renderHomeRoomCards();
+        }
+        
+    } catch (error) {
+        console.error('Error deleting evidence:', error);
+        showAlert('เกิดข้อผิดพลาดในการลบหลักฐาน', 'error');
+    }
+    
+    console.log('=== deleteEvidence ended ===');
 }
