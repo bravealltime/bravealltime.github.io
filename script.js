@@ -79,19 +79,22 @@ function initializePageContent() {
         if (addRoomBtn) {
             if (hasPermission('canAddNewBills')) {
                 addRoomBtn.classList.remove('hidden');
-                addRoomBtn.addEventListener('click', () => addRoomModal.classList.remove('hidden'));
+                addRoomBtn.addEventListener('click', () => openModal('add-room-modal'));
             } else {
                 addRoomBtn.classList.add('hidden');
             }
         }
         
-        if(closeAddRoomModalBtn) closeAddRoomModalBtn.addEventListener('click', () => addRoomModal.classList.add('hidden'));
+        if(closeAddRoomModalBtn) closeAddRoomModalBtn.addEventListener('click', () => closeModal('add-room-modal'));
         if(addRoomForm) addRoomForm.addEventListener('submit', handleAddRoom);
         
         // Initialize evidence modal listeners for home page - only for admin
         if (hasPermission('canUploadEvidence')) {
             setupEvidenceModalListeners();
         }
+
+        // Add bulk data entry button for all rooms
+        addBulkDataEntryButton();
 
     } else if (document.getElementById('history-section')) {
         // This is the index.html page for a specific room
@@ -119,173 +122,152 @@ function initializePageContent() {
 
 // --- Data Rendering ---
 
+function getAmountColorClass(amount) {
+    if (amount <= 1000) return 'low';
+    if (amount <= 3000) return 'medium';
+    return 'high';
+}
+
 async function renderHomeRoomCards() {
     const cardsContainer = document.getElementById('home-room-cards');
     if (!cardsContainer) return;
 
-    const user = window.currentUser;
-    const userRole = window.currentUserRole;
-    const userData = window.currentUserData; // Contains managedRooms or accessibleRooms
-
-    if (!user) {
-        cardsContainer.innerHTML = `<p class="text-center text-red-400 col-span-full">กรุณาเข้าสู่ระบบเพื่อดูข้อมูล</p>`;
-        return;
-    }
+    cardsContainer.innerHTML = `<p class="text-center text-gray-400 col-span-full py-8">กำลังโหลดข้อมูลห้องพัก...</p>`;
 
     try {
-        let allBills = await loadFromFirebase(); // Load all bills first
+        let allBills = await loadFromFirebase();
         if (!allBills || allBills.length === 0) {
             cardsContainer.innerHTML = '<p class="text-center text-gray-400 col-span-full">ยังไม่มีข้อมูลห้องพัก</p>';
             return;
         }
 
+        const user = window.currentUser;
+        const userRole = window.currentUserRole;
+        const userData = window.currentUserData;
         let displayableBills = [];
-        if (userRole === 'admin' || (userRole === 'user' && hasPermission('canViewAllRooms'))) { // Admin and general 'user' with permission see all
+
+        if (userRole === 'admin' || (userRole === 'user' && hasPermission('canViewAllRooms'))) {
             displayableBills = allBills;
-        } else if (userRole === '1' && userData && userData.managedRooms) { // Level 1 Owner
+        } else if (userRole === '1' && userData && userData.managedRooms) {
             displayableBills = allBills.filter(bill => userData.managedRooms.includes(bill.room));
-        } else if (userRole === 'level1_tenant' && userData && userData.accessibleRooms) { // Level 1 Tenant
+        } else if (userRole === 'level1_tenant' && userData && userData.accessibleRooms) {
             displayableBills = allBills.filter(bill => userData.accessibleRooms.includes(bill.room));
         } else {
-            // If user is 'user' without canViewAllRooms, or L1/L1_Tenant without room assignments
-            if (!hasPermission('canViewAllRooms')) { // Check general permission first
-                 cardsContainer.innerHTML = `<p class="text-center text-red-400 col-span-full">คุณไม่มีสิทธิ์ดูข้อมูลห้อง</p>`;
-                 return;
-            }
-            // Fallback for roles like '2' or 'user' who might have canViewAllRooms but no specific room list
-            // This part might need refinement based on exact logic for 'user' and '2'
-            displayableBills = allBills;
+            cardsContainer.innerHTML = `<p class="text-center text-red-400 col-span-full">คุณไม่มีสิทธิ์ดูข้อมูลห้อง</p>`;
+            return;
         }
 
         if (displayableBills.length === 0) {
             cardsContainer.innerHTML = '<p class="text-center text-gray-400 col-span-full">ไม่พบข้อมูลห้องพักที่คุณมีสิทธิ์เข้าถึง</p>';
             return;
         }
-
+        
         const rooms = {};
         displayableBills.forEach(bill => {
-            // Ensure bill and bill.room are valid before trying to use bill.room as a key
             if (bill && typeof bill.room !== 'undefined' && bill.room !== null && String(bill.room).trim() !== '') {
-                // Also ensure bill.date is valid for comparison
                 if (bill.date && typeof bill.date === 'string' && bill.date.split('/').length === 3) {
                     if (!rooms[bill.room] || new Date(bill.date.split('/').reverse().join('-')) > new Date(rooms[bill.room].date.split('/').reverse().join('-'))) {
                         rooms[bill.room] = bill;
                     }
                 } else {
-                    // Handle bills with invalid date for sorting - perhaps add them if room doesn't exist yet, or log warning
-                    if (!rooms[bill.room]) {
-                        rooms[bill.room] = bill; // Add if room not present, but date comparison is skipped
-                        console.warn('Bill added to rooms object but date is invalid for comparison:', bill);
-                    } else {
-                         console.warn('Skipping bill due to invalid date for comparison (existing room entry has valid date or is newer):', bill);
+                     if (!rooms[bill.room]) {
+                        rooms[bill.room] = bill;
+                        console.warn('Bill added but date is invalid:', bill);
                     }
                 }
-            } else {
-                console.warn('Skipping bill due to missing or invalid room identifier in displayableBills.forEach:', bill);
             }
         });
 
-        const sortedRooms = Object.values(rooms).sort((a, b) => {
-            // Add a check for a.room and b.room because if rooms contained an entry with undefined key, it would fail here.
-            // However, the check in forEach should prevent undefined keys.
-            if (a.room && b.room) {
-                return String(a.room).localeCompare(String(b.room));
-            } else if (a.room) {
-                return -1; // a comes first
-            } else if (b.room) {
-                return 1; // b comes first
-            }
-            return 0; // both are problematic
-        });
+        const sortedRooms = Object.values(rooms).sort((a, b) => String(a.room).localeCompare(String(b.room)));
 
         cardsContainer.innerHTML = sortedRooms.map(roomData => {
-            const totalAmount = Number(roomData.total || 0);
-            const amountColor = getAmountColor(totalAmount);
+            if (!roomData || typeof roomData.room === 'undefined') return '';
+            
+            const totalAmount = Number(roomData.total || 0) + Number(roomData.waterTotal || 0);
             const dueDateInfo = getDueDateInfo(roomData.dueDate);
             const isPaymentConfirmed = roomData.paymentConfirmed === true;
+            const amountColorClass = getAmountColorClass(totalAmount);
+            let formattedDate = 'N/A';
+            if (roomData.date) {
+                try {
+                    const dateParts = roomData.date.split('/');
+                    if (dateParts.length === 3) {
+                       const date = new Date(`${dateParts[2]}-${dateParts[1]}-${dateParts[0]}`);
+                       if (!isNaN(date.getTime())) {
+                           formattedDate = date.toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                       }
+                    }
+                } catch (e) { console.warn("Could not parse date:", roomData.date); }
+            }
 
-            // Defensive check for essential data that will be directly accessed.
-            // Crucially, roomData.room must exist for the onclick handler.
-            if (!roomData || typeof roomData.room === 'undefined') {
-                console.warn('Skipping card rendering for roomData because roomData.room is undefined:', roomData);
-                return ''; // Skip this card if no room identifier
+            let paymentStatusHtml = '';
+            if (isPaymentConfirmed) {
+                paymentStatusHtml = `<div class="payment-status confirmed"><i class="fas fa-check-circle"></i>ชำระเงินแล้ว</div>`;
+            } else if (dueDateInfo.show) {
+                let statusClass = 'due-soon'; // Default for upcoming
+                let icon = 'fa-clock';
+                if (dueDateInfo.text.includes('เกินกำหนด')) {
+                    statusClass = 'overdue';
+                    icon = 'fa-exclamation-circle';
+                }
+                
+                paymentStatusHtml = `<div class="payment-status ${statusClass}"><i class="fas ${icon}"></i>${dueDateInfo.text}</div>`;
             }
 
             return `
-
-            <div class="bg-slate-800 rounded-2xl shadow-lg p-5 flex flex-col justify-between hover:bg-slate-700/50 transition-all border border-slate-700 hover:border-blue-500">
-                <div>
-                    <div class="flex justify-between items-start">
+            <div class="room-card" data-room-id="${roomData.room}">
+                <div class="card-header">
+                    <div class="card-title-group">
                         <div class="flex items-center gap-2">
-                            <span class="text-3xl font-bold text-blue-400">${roomData.room}</span>
-                            ${hasPermission('canEditAllBills') ? 
-                                `<button onclick="openEditRoomNameModal('${roomData.room}', '${roomData.name || ''}')" class="text-yellow-400 hover:text-yellow-300 transition-colors" title="แก้ไขชื่อห้อง">
-                                    <i class="fas fa-edit text-sm"></i>
-                                </button>` : ''
-                            }
+                           <span class="room-number">${roomData.room}</span>
+                           ${hasPermission('canEditAllBills') ? `<button onclick="openEditRoomNameModal('${roomData.room}', '${roomData.name || ''}')" class="text-yellow-400 hover:text-yellow-300 transition-colors" title="แก้ไขชื่อห้อง"><i class="fas fa-edit text-sm"></i></button>` : ''}
                         </div>
-                        <div class="text-xs text-gray-400 text-right">
-                            <span>อัปเดตล่าสุด</span><br>
-                            <span>${roomData.date || 'N/A'}</span> {/* Added default for date */}
-                        </div>
+                        <p class="room-name truncate">${roomData.name || 'ไม่มีชื่อ'}</p>
                     </div>
-                    <p class="text-lg text-white font-semibold mt-2 truncate">${roomData.name || 'ไม่มีชื่อ'}</p>
-                    ${isPaymentConfirmed ? 
-                        `<div class="mt-2 flex items-center gap-2 text-emerald-400">
-                            <i class="fas fa-check-circle"></i>
-                            <span class="text-sm font-medium">ยืนยันการชำระเงินแล้ว</span>
-                        </div>` : ''
-                    }
-                </div>
-                <div class="mt-4 pt-4 border-t border-slate-700 space-y-2">
-                     <div class="flex justify-between items-center text-sm">
-                        <span class="text-gray-400">จำนวนหน่วย:</span>
-                        <span class="text-white font-semibold">${roomData.units || 'N/A'} หน่วย</span>
-                    </div>
-                    <div class="flex justify-between items-center text-sm">
-                        <span class="text-gray-400">หน่วยละ:</span>
-                        <span class="text-white font-semibold">${Number(roomData.rate || 0).toFixed(2)} ฿</span>
+                    <div class="card-meta text-right">
+                        <span class="meta-label">อัปเดตล่าสุด</span>
+                        <span class="meta-value">${formattedDate}</span>
                     </div>
                 </div>
-                <div class="mt-4 pt-4 border-t border-slate-700 space-y-2">
-                    <div class="flex justify-between items-center text-sm">
-                        <span class="text-gray-400">ค่าน้ำ (หน่วย):</span>
-                        <span class="text-cyan-400 font-semibold">${roomData.waterUnits || '-'} หน่วย</span>
+
+                <div class="card-body">
+                    <div class="card-section">
+                        <span class="label">ค่าไฟ (หน่วย)</span>
+                        <span class="value electric">${roomData.units || 'N/A'}</span>
                     </div>
-                    <div class="flex justify-between items-center text-sm">
-                        <span class="text-gray-400">ค่าน้ำ (บาท):</span>
-                        <span class="text-sky-400 font-semibold">฿${Number(roomData.waterTotal || 0).toLocaleString()}</span>
+                    <div class="card-section">
+                        <span class="label">ค่าน้ำ (หน่วย)</span>
+                        <span class="value water">${roomData.waterUnits || '-'}</span>
                     </div>
                 </div>
-                 <div class="mt-4 pt-4 border-t border-slate-700 text-center">
-                    <p class="text-sm text-gray-300">ค่าไฟล่าสุด</p>
-                    <p class="text-4xl font-bold ${amountColor}">฿${totalAmount.toLocaleString()}</p>
+
+                <div class="card-total">
+                    <span class="total-label">ยอดรวมล่าสุด</span>
+                    <p class="total-amount ${isPaymentConfirmed ? 'paid' : amountColorClass}">฿${totalAmount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
                 </div>
-                ${dueDateInfo.show ? `
-                <div class="mt-4 pt-2 border-t border-slate-700/50 text-center">
-                    <div class="flex items-center justify-center gap-2 ${dueDateInfo.color}">
-                        <i class="fas fa-clock"></i>
-                        <span class="text-sm font-medium">${dueDateInfo.text}</span>
-                    </div>
-                </div>` : ''}
-                <div class="mt-4 pt-4 border-t border-slate-700 flex gap-2">
-                    <button onclick="viewRoomHistory('${roomData.room}')" class="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-sm transition-all flex items-center justify-center gap-1">
-                        <i class="fas fa-history"></i> ประวัติ
-                    </button>
-                    ${hasPermission('canDeleteBills') ? 
-                        `<button onclick="openDeleteRoomConfirmModal('${roomData.room}')" class="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium text-sm transition-all flex items-center justify-center" title="ลบห้อง">
-                            <i class="fas fa-trash"></i>
-                        </button>` : ''
-                    }
+
+                ${paymentStatusHtml}
+
+                <div class="card-footer">
+                    <button onclick="viewRoomHistory('${roomData.room}')" class="btn btn-primary"><i class="fas fa-history"></i>ประวัติ</button>
+                    ${hasPermission('canDeleteBills') ? `<button onclick="openDeleteRoomConfirmModal('${roomData.room}')" class="btn btn-danger" title="ลบห้อง"><i class="fas fa-trash"></i></button>` : ''}
                 </div>
             </div>
-        `}).join('');
+            `;
+        }).join('');
+
+        // Staggered animation for cards
+        const cards = cardsContainer.querySelectorAll('.room-card');
+        cards.forEach((card, index) => {
+            card.classList.add('card-enter');
+            setTimeout(() => {
+                card.classList.add('card-enter-active');
+            }, 100 * index);
+        });
 
     } catch (error) {
         console.error("Error rendering room cards:", error);
-        if (cardsContainer) {
-            cardsContainer.innerHTML = '<p class="text-center text-red-400 col-span-full">เกิดข้อผิดพลาดในการโหลดข้อมูล</p>';
-        }
+        cardsContainer.innerHTML = '<p class="text-center text-red-400 col-span-full">เกิดข้อผิดพลาดในการโหลดข้อมูล</p>';
     }
 }
 
@@ -592,8 +574,7 @@ async function handleAddRoom(event) {
         }
 
         // Close modal and reset form
-        const modal = document.getElementById('add-room-modal');
-        modal.classList.add('hidden');
+        closeModal('add-room-modal');
         document.getElementById('add-room-form').reset();
 
         // Refresh room cards
@@ -744,9 +725,7 @@ async function openEditModal(key) {
         editingIndex = key;
 
         // Show modal
-        const modal = document.getElementById('edit-modal');
-        modal.classList.remove('hidden');
-        modal.classList.add('flex');
+        openModal('edit-modal');
 
         // Calculate and display totals
         calculateEditTotals();
@@ -770,7 +749,7 @@ async function saveEdit() {
         if (!originalData) {
             showAlert('ไม่พบข้อมูลเดิมที่ต้องการแก้ไข', 'error');
             editingIndex = -1; // Reset
-            closeModal();
+            closeModal('edit-modal');
             return;
         }
 
@@ -832,7 +811,7 @@ async function saveEdit() {
         showAlert('บันทึกการแก้ไขเรียบร้อยแล้ว', 'success');
 
         // Close modal
-        closeModal();
+        closeModal('edit-modal');
 
         // Refresh the table
         const params = new URLSearchParams(window.location.search);
@@ -994,10 +973,28 @@ function getDueDateInfo(dueDateStr) {
 }
 
 // --- Modal Controls ---
-function closeModal() {
-    const modal = document.getElementById('edit-modal');
-    modal.classList.remove('flex');
-    modal.classList.add('hidden');
+function closeModal(modalId) {
+    const modal = document.getElementById(modalId);
+    if (!modal) return;
+
+    modal.classList.remove('active');
+    
+    const onTransitionEnd = () => {
+        modal.style.display = 'none';
+        document.body.classList.remove('modal-open');
+        modal.removeEventListener('transitionend', onTransitionEnd);
+    };
+    
+    modal.addEventListener('transitionend', onTransitionEnd);
+
+    // For bulk modal, remove it from DOM after closing
+    if (modalId === 'bulk-data-modal' || modalId === 'confirm-modal') {
+         setTimeout(() => {
+            if (!modal.classList.contains('active')) {
+                modal.remove();
+            }
+        }, 500); // A bit longer than transition
+    }
 }
 
 function viewEvidence(url, fileName = 'หลักฐานการชำระเงิน') {
@@ -1073,7 +1070,6 @@ function closeEvidenceViewModal() {
     const modal = document.getElementById('evidence-view-modal');
     if (modal) {
         modal.classList.add('hidden');
-        modal.classList.remove('flex');
     }
 }
 
@@ -1264,69 +1260,146 @@ async function handleDeleteBill(key) {
     }
 }
 
+// Add mobile detection utility
+function isMobileDevice() {
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+}
+
+// Add image compression utility function
+function compressImage(file, maxWidth = 1024, maxHeight = 1024, quality = 0.8) {
+    return new Promise((resolve, reject) => {
+        console.log('=== Image compression started ===');
+        console.log('Original file:', {
+            name: file.name,
+            size: file.size,
+            type: file.type
+        });
+
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        const img = new Image();
+
+        img.onload = () => {
+            console.log('Image loaded, original dimensions:', img.width, 'x', img.height);
+            
+            // Calculate new dimensions while maintaining aspect ratio
+            let { width, height } = img;
+            if (width > maxWidth) {
+                height = (height * maxWidth) / width;
+                width = maxWidth;
+            }
+            if (height > maxHeight) {
+                width = (width * maxHeight) / height;
+                height = maxHeight;
+            }
+
+            console.log('Compressed dimensions:', width, 'x', height);
+
+            // Set canvas dimensions
+            canvas.width = width;
+            canvas.height = height;
+
+            // Draw and compress image
+            ctx.drawImage(img, 0, 0, width, height);
+
+            // Convert to blob with specified quality
+            canvas.toBlob((blob) => {
+                if (blob) {
+                    console.log('Compression completed:', {
+                        originalSize: file.size,
+                        compressedSize: blob.size,
+                        compressionRatio: ((file.size - blob.size) / file.size * 100).toFixed(2) + '%'
+                    });
+                    
+                    // Create new file with compressed data
+                    const compressedFile = new File([blob], file.name, {
+                        type: file.type,
+                        lastModified: Date.now()
+                    });
+                    resolve(compressedFile);
+                } else {
+                    reject(new Error('Failed to compress image'));
+                }
+            }, file.type, quality);
+        };
+
+        img.onerror = () => {
+            console.error('Failed to load image for compression');
+            reject(new Error('Failed to load image for compression'));
+        };
+
+        img.src = URL.createObjectURL(file);
+    });
+}
+
 async function handleEvidenceUpload() {
+    logUploadEvent('upload_started', { keyForEvidence });
     console.log('=== handleEvidenceUpload started ===');
     
-    const fileInput = document.getElementById('evidence-image-input');
-    const cameraInput = document.getElementById('evidence-camera-input');
-    
-    // Check both file inputs for selected files
-    let file = null;
-    if (fileInput && fileInput.files && fileInput.files.length > 0) {
-        file = fileInput.files[0];
-        console.log('File found in fileInput:', file.name);
-    } else if (cameraInput && cameraInput.files && cameraInput.files.length > 0) {
-        file = cameraInput.files[0];
-        console.log('File found in cameraInput:', file.name);
-    }
-    
-    console.log('File input:', fileInput);
-    console.log('Camera input:', cameraInput);
-    console.log('Selected file:', file);
-    console.log('keyForEvidence (bill key):', keyForEvidence);
-    
-    // Additional debugging information
-    if (fileInput) {
-        console.log('FileInput files length:', fileInput.files.length);
-        if (fileInput.files.length > 0) {
-            console.log('FileInput first file:', fileInput.files[0].name);
-        }
-    }
-    if (cameraInput) {
-        console.log('CameraInput files length:', cameraInput.files.length);
-        if (cameraInput.files.length > 0) {
-            console.log('CameraInput first file:', cameraInput.files[0].name);
-        }
-    }
+    // Use compressed file if available, otherwise check inputs
+    let file = window.compressedEvidenceFile;
     
     if (!file) {
+        const fileInput = document.getElementById('evidence-image-input');
+        const cameraInput = document.getElementById('evidence-camera-input');
+        
+        // Check both file inputs for selected files
+        if (fileInput && fileInput.files && fileInput.files.length > 0) {
+            file = fileInput.files[0];
+            console.log('File found in fileInput:', file.name);
+        } else if (cameraInput && cameraInput.files && cameraInput.files.length > 0) {
+            file = cameraInput.files[0];
+            console.log('File found in cameraInput:', file.name);
+        }
+    } else {
+        console.log('Using compressed file:', file.name);
+    }
+    
+    console.log('File to upload:', file);
+    console.log('keyForEvidence (bill key):', keyForEvidence);
+    
+    if (!file) {
+        logUploadEvent('upload_failed', { reason: 'no_file_selected' });
         console.error('No file selected');
         showAlert('กรุณาเลือกไฟล์รูปภาพก่อน', 'error');
         return;
     }
     
     if (!keyForEvidence) {
+        logUploadEvent('upload_failed', { reason: 'no_bill_key' });
         console.error('No keyForEvidence (bill key)');
         showAlert('เกิดข้อผิดพลาด: ไม่พบข้อมูลที่ต้องการแนบหลักฐาน', 'error');
         return;
     }
 
+    logUploadEvent('file_selected', {
+        fileName: file.name,
+        fileSize: file.size,
+        fileType: file.type,
+        isCompressed: !!window.compressedEvidenceFile
+    });
+
     // Fetch bill data to check room for permission
     let billRoom;
     try {
+        console.log('Fetching bill data for permission check...');
         const billSnapshot = await db.ref(`electricityData/${keyForEvidence}`).once('value');
         const billData = billSnapshot.val();
         if (!billData || !billData.room) {
+            logUploadEvent('upload_failed', { reason: 'no_bill_data' });
             showAlert('ไม่พบข้อมูลห้องสำหรับบิลนี้ ไม่สามารถตรวจสอบสิทธิ์ได้', 'error');
             return;
         }
         billRoom = billData.room;
+        console.log('Bill room:', billRoom);
 
         if (!hasPermission('canUploadEvidence', billRoom)) {
+            logUploadEvent('upload_failed', { reason: 'no_permission', room: billRoom });
             showAlert(`คุณไม่มีสิทธิ์อัปโหลดหลักฐานสำหรับห้อง ${billRoom}`, 'error');
             return;
         }
     } catch (error) {
+        logUploadEvent('upload_failed', { reason: 'permission_check_error', error: error.message });
         console.error("Error fetching bill data for permission check:", error);
         showAlert('เกิดข้อผิดพลาดในการตรวจสอบสิทธิ์อัปโหลด', 'error');
         return;
@@ -1334,11 +1407,13 @@ async function handleEvidenceUpload() {
 
     // Validate file type and size
     if (!file.type.startsWith('image/')) {
+        logUploadEvent('upload_failed', { reason: 'invalid_file_type', fileType: file.type });
         showAlert('กรุณาเลือกไฟล์รูปภาพเท่านั้น (JPG, PNG, GIF)', 'error');
         return;
     }
     
-    if (file.size > 5 * 1024 * 1024) { // 5MB limit
+    if (file.size > 5 * 1024 * 1024) { // 5MB limit for upload
+        logUploadEvent('upload_failed', { reason: 'file_too_large', fileSize: file.size });
         showAlert('ขนาดไฟล์ต้องไม่เกิน 5MB', 'error');
         return;
     }
@@ -1362,52 +1437,116 @@ async function handleEvidenceUpload() {
     });
 
     // Update UI for upload state
-    saveBtn.disabled = true;
-    saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>กำลังอัปโหลด...';
-    progressContainer.classList.remove('hidden');
-    uploadStatus.classList.remove('hidden');
-    progressBar.style.width = '0%';
-    uploadPercentage.textContent = '0%';
-    uploadFilename.textContent = file.name;
-    errorMsg.textContent = '';
+    if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>กำลังอัปโหลด...';
+    }
+    if (progressContainer) progressContainer.classList.remove('hidden');
+    if (uploadStatus) uploadStatus.classList.remove('hidden');
+    if (progressBar) progressBar.style.width = '0%';
+    if (uploadPercentage) uploadPercentage.textContent = '0%';
+    if (uploadFilename) uploadFilename.textContent = file.name;
+    if (errorMsg) errorMsg.textContent = '';
 
     try {
+        logUploadEvent('firebase_check_started');
         console.log('Checking Firebase Storage availability...');
+        
+        // Validate Firebase Storage before upload
+        const storageValidation = await validateFirebaseStorage();
+        if (!storageValidation.success) {
+            logUploadEvent('upload_failed', { 
+                reason: 'storage_validation_failed',
+                error: storageValidation.error,
+                code: storageValidation.code
+            });
+            throw new Error(`การตรวจสอบ Firebase Storage ล้มเหลว: ${storageValidation.error}`);
+        }
+        
+        // Check if Firebase is initialized
+        if (!firebase || !firebase.apps || firebase.apps.length === 0) {
+            logUploadEvent('upload_failed', { reason: 'firebase_not_initialized' });
+            throw new Error('Firebase ยังไม่ได้เริ่มต้น กรุณารีเฟรชหน้าเว็บ');
+        }
+        
         // Check if Firebase Storage is available
         if (!firebase.storage) {
+            logUploadEvent('upload_failed', { reason: 'firebase_storage_unavailable' });
             console.error('Firebase Storage not available');
             throw new Error('Firebase Storage ไม่พร้อมใช้งาน');
         }
 
+        // Check if user is authenticated
+        if (!auth.currentUser) {
+            logUploadEvent('upload_failed', { reason: 'user_not_authenticated' });
+            throw new Error('กรุณาเข้าสู่ระบบก่อนอัปโหลดไฟล์');
+        }
+
+        // Get storage usage info
+        const usageInfo = await getStorageUsageInfo();
+        if (usageInfo) {
+            console.log('Current storage usage:', usageInfo);
+            logUploadEvent('storage_usage_checked', usageInfo);
+            
+            // Check if user is approaching storage limit (e.g., 50MB)
+            const usageMB = parseFloat(usageInfo.totalSizeMB);
+            if (usageMB > 45) {
+                console.warn('User approaching storage limit:', usageMB, 'MB');
+                showAlert(`คำเตือน: คุณใช้พื้นที่จัดเก็บ ${usageMB} MB จาก 50 MB แล้ว`, 'warning');
+            }
+        }
+
         console.log('Firebase Storage is available');
+        console.log('User authenticated:', auth.currentUser.uid);
         console.log('Firebase config:', firebase.app().options);
 
-        // Create storage reference with proper path structure
-        const storageRef = firebase.storage().ref();
+        // Get storage instance
+        const storage = firebase.storage();
+        const storageRef = storage.ref();
+        
+        // Create unique filename with timestamp and user ID
         const timestamp = Date.now();
+        const userID = auth.currentUser.uid;
         const sanitizedFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-        const fileName = `${timestamp}_${sanitizedFileName}`;
+        const fileName = `${timestamp}_${userID}_${sanitizedFileName}`;
         const evidenceRef = storageRef.child(`evidence/${keyForEvidence}/${fileName}`);
         
         console.log('Storage reference created:', {
             timestamp,
+            userID,
             fileName,
             fullPath: `evidence/${keyForEvidence}/${fileName}`
         });
         
+        logUploadEvent('upload_started', {
+            fileName,
+            fileSize: file.size,
+            storagePath: `evidence/${keyForEvidence}/${fileName}`,
+            userID: userID
+        });
+        
         console.log('Starting upload...');
         
-        // Create upload task with metadata
+        // Create upload task with comprehensive metadata
         const metadata = {
             contentType: file.type,
+            cacheControl: 'public, max-age=31536000', // Cache for 1 year
             customMetadata: {
                 originalName: file.name,
-                uploadedBy: auth.currentUser?.uid || 'unknown',
+                uploadedBy: userID,
                 uploadedAt: new Date().toISOString(),
-                billKey: keyForEvidence
+                billKey: keyForEvidence,
+                room: billRoom,
+                compressed: window.compressedEvidenceFile ? 'true' : 'false',
+                originalSize: window.compressedEvidenceFile ? window.compressedEvidenceFile.originalSize : file.size,
+                deviceInfo: isMobileDevice() ? 'mobile' : 'desktop',
+                userAgent: navigator.userAgent.substring(0, 100) // Limit length
             }
         };
         
+        console.log('Upload metadata:', metadata);
+        
+        // Start upload with metadata
         const uploadTask = evidenceRef.put(file, metadata);
 
         // Monitor upload progress
@@ -1415,17 +1554,36 @@ async function handleEvidenceUpload() {
             (snapshot) => {
                 const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
                 console.log('Upload progress:', progress + '%');
-                progressBar.style.width = progress + '%';
-                uploadPercentage.textContent = `${Math.round(progress)}%`;
+                
+                // Update UI progress
+                if (progressBar) progressBar.style.width = progress + '%';
+                if (uploadPercentage) uploadPercentage.textContent = `${Math.round(progress)}%`;
                 
                 // Update status text based on progress
-                if (progress < 100) {
-                    uploadFilename.textContent = `กำลังอัปโหลด ${file.name}...`;
-                } else {
-                    uploadFilename.textContent = `อัปโหลดเสร็จสิ้น - ${file.name}`;
+                if (uploadFilename) {
+                    if (progress < 100) {
+                        uploadFilename.textContent = `กำลังอัปโหลด ${file.name}... (${Math.round(progress)}%)`;
+                    } else {
+                        uploadFilename.textContent = `อัปโหลดเสร็จสิ้น - ${file.name}`;
+                    }
+                }
+                
+                // Log progress milestones
+                if (progress % 25 === 0) {
+                    logUploadEvent('upload_progress', { 
+                        progress: Math.round(progress),
+                        bytesTransferred: snapshot.bytesTransferred,
+                        totalBytes: snapshot.totalBytes
+                    });
                 }
             }, 
             (error) => {
+                logUploadEvent('upload_failed', { 
+                    reason: 'firebase_upload_error',
+                    errorCode: error.code,
+                    errorMessage: error.message,
+                    errorDetails: error
+                });
                 console.error('Upload error:', error);
                 console.error('Error code:', error.code);
                 console.error('Error message:', error.message);
@@ -1435,13 +1593,13 @@ async function handleEvidenceUpload() {
                 // Handle specific Firebase Storage errors
                 switch (error.code) {
                     case 'storage/unauthorized':
-                        errorMessage = 'ไม่มีสิทธิ์ในการอัปโหลดไฟล์';
+                        errorMessage = 'ไม่มีสิทธิ์ในการอัปโหลดไฟล์ กรุณาเข้าสู่ระบบใหม่';
                         break;
                     case 'storage/canceled':
                         errorMessage = 'การอัปโหลดถูกยกเลิก';
                         break;
                     case 'storage/unknown':
-                        errorMessage = 'เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ';
+                        errorMessage = 'เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ กรุณาลองใหม่อีกครั้ง';
                         break;
                     case 'storage/quota-exceeded':
                         errorMessage = 'พื้นที่จัดเก็บไฟล์เต็ม';
@@ -1457,11 +1615,13 @@ async function handleEvidenceUpload() {
             }, 
             async () => {
                 try {
+                    logUploadEvent('upload_completed', { fileName });
                     console.log('Upload completed, getting download URL...');
                     // Get download URL
                     const downloadURL = await uploadTask.snapshot.ref.getDownloadURL();
                     console.log('Download URL obtained:', downloadURL);
                     
+                    logUploadEvent('database_update_started');
                     console.log('Updating database...');
                     // Update database with evidence URL
                     await db.ref(`electricityData/${keyForEvidence}`).update({ 
@@ -1470,7 +1630,8 @@ async function handleEvidenceUpload() {
                         evidenceFileName: fileName,
                         evidenceFileSize: file.size,
                         evidenceFileType: file.type,
-                        evidenceUploadedBy: auth.currentUser?.uid || 'unknown'
+                        evidenceUploadedBy: auth.currentUser?.uid || 'unknown',
+                        evidenceCompressed: window.compressedEvidenceFile ? true : false
                     });
                     
                     console.log('Database updated successfully');
@@ -1504,17 +1665,17 @@ async function handleEvidenceUpload() {
             stack: error.stack
         });
         
-        errorMsg.textContent = error.message;
+        if (errorMsg) errorMsg.textContent = error.message;
         showAlert(error.message, 'error');
         
         // Reset UI
-        saveBtn.disabled = false;
-        saveBtn.innerHTML = '<i class="fas fa-save"></i> บันทึก';
-        progressContainer.classList.add('hidden');
-        uploadStatus.classList.add('hidden');
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = '<i class="fas fa-save"></i> บันทึก';
+        }
+        if (progressContainer) progressContainer.classList.add('hidden');
+        if (uploadStatus) uploadStatus.classList.add('hidden');
     }
-    
-    console.log('=== handleEvidenceUpload ended ===');
 }
 
 
@@ -1522,336 +1683,349 @@ async function handleEvidenceUpload() {
 
 // Global functions for evidence handling
 function handleFileSelect(file) {
+    logUploadEvent('file_selection_started', {
+        fileName: file?.name,
+        fileSize: file?.size,
+        fileType: file?.type
+    });
     console.log('=== handleFileSelect started ===');
-    console.log('File received:', file);
-    console.log('File details:', {
+    console.log('File received:', {
         name: file.name,
         size: file.size,
         type: file.type,
         lastModified: file.lastModified
     });
-    
-    const preview = document.getElementById('evidence-preview');
+
+    if (!file) {
+        logUploadEvent('file_selection_failed', { reason: 'no_file_provided' });
+        console.log('No file provided, clearing selection');
+        clearEvidenceSelection();
+        return;
+    }
+
+    const previewContainer = document.getElementById('evidence-preview');
     const placeholder = document.getElementById('evidence-placeholder');
     const saveBtn = document.getElementById('evidence-save-btn');
     const errorMsg = document.getElementById('evidence-error');
     
-    console.log('UI elements found:', {
-        preview: !!preview,
-        placeholder: !!placeholder,
-        saveBtn: !!saveBtn,
-        errorMsg: !!errorMsg
-    });
-    
-    // Clear previous error
-    errorMsg.textContent = '';
-    
+    // Reset any previous error states
+    if (errorMsg) errorMsg.textContent = '';
+
     // Validate file type
     if (!file.type.startsWith('image/')) {
+        logUploadEvent('file_selection_failed', { 
+            reason: 'invalid_file_type',
+            fileType: file.type
+        });
         console.error('Invalid file type:', file.type);
-        errorMsg.textContent = 'กรุณาเลือกไฟล์รูปภาพเท่านั้น (JPG, PNG, GIF)';
-        saveBtn.disabled = true;
-        return;
-    }
-    
-    // Validate file size (5MB limit)
-    if (file.size > 5 * 1024 * 1024) {
-        console.error('File too large:', file.size);
-        errorMsg.textContent = 'ขนาดไฟล์ต้องไม่เกิน 5MB';
-        saveBtn.disabled = true;
-        return;
-    }
-    
-    // Validate file name
-    if (file.name.length > 100) {
-        console.error('File name too long:', file.name.length);
-        errorMsg.textContent = 'ชื่อไฟล์ต้องไม่เกิน 100 ตัวอักษร';
-        saveBtn.disabled = true;
+        showAlert('กรุณาเลือกไฟล์รูปภาพเท่านั้น', 'error');
+        clearEvidenceSelection();
         return;
     }
 
-    console.log('File validation passed, creating preview...');
-    
-    // Show file info
-    const fileSize = (file.size / 1024 / 1024).toFixed(2);
-    const objectURL = URL.createObjectURL(file);
-    console.log('Object URL created:', objectURL);
-    
-    // Create preview with better formatting
-    preview.innerHTML = `
-        <div class="w-full max-w-sm">
-            <img src="${objectURL}" class="w-full h-40 object-cover rounded-lg mb-3 border border-slate-600">
-            <div class="bg-slate-700/50 rounded-lg p-3 space-y-1">
-                <div class="flex justify-between text-sm">
-                    <span class="text-slate-400">ชื่อไฟล์:</span>
-                    <span class="text-white font-medium truncate ml-2">${file.name}</span>
-                </div>
-                <div class="flex justify-between text-sm">
-                    <span class="text-slate-400">ขนาด:</span>
-                    <span class="text-green-400 font-medium">${fileSize} MB</span>
-                </div>
-                <div class="flex justify-between text-sm">
-                    <span class="text-slate-400">ประเภท:</span>
-                    <span class="text-blue-400 font-medium">${file.type}</span>
-                </div>
-                <div class="flex justify-between text-sm">
-                    <span class="text-slate-400">ความละเอียด:</span>
-                    <span class="text-yellow-400 font-medium">กำลังตรวจสอบ...</span>
-                </div>
-            </div>
+    // Validate file size (e.g., 10MB before compression)
+    if (file.size > 10 * 1024 * 1024) {
+        logUploadEvent('file_selection_failed', { 
+            reason: 'file_too_large',
+            fileSize: file.size
+        });
+        console.error('File too large:', file.size);
+        showAlert('ขนาดไฟล์ต้องไม่เกิน 10MB', 'error');
+        clearEvidenceSelection();
+        return;
+    }
+
+    logUploadEvent('file_validation_passed', {
+        fileName: file.name,
+        fileSize: file.size,
+        fileType: file.type
+    });
+    console.log('File validation passed, starting compression...');
+
+    // Show loading state
+    if (placeholder) placeholder.innerHTML = `
+        <div class="flex flex-col items-center text-slate-400">
+            <i class="fas fa-spinner fa-spin text-4xl mb-2"></i>
+            <span class="text-base text-center">กำลังประมวลผลรูปภาพ...</span>
         </div>
     `;
-    
-    // Get image dimensions
-    const img = new Image();
-    img.onload = function() {
-        const resolutionText = `${this.width} × ${this.height}`;
-        const resolutionElement = preview.querySelector('.text-yellow-400');
-        if (resolutionElement) {
-            resolutionElement.textContent = resolutionText;
-        }
-    };
-    img.src = objectURL;
-    
-    preview.classList.remove('hidden');
-    placeholder.classList.add('hidden');
-    
-    // Enable save button and show success message
-    saveBtn.disabled = false;
-    saveBtn.innerHTML = '<i class="fas fa-save"></i> บันทึก';
-    console.log('Save button enabled:', !saveBtn.disabled);
-    
-    // Double-check that the file is properly assigned to the input
-    const fileInput = document.getElementById('evidence-image-input');
-    const cameraInput = document.getElementById('evidence-camera-input');
-    
-    if (fileInput && fileInput.files && fileInput.files.length === 0) {
-        // If file input is empty, try to assign the file
-        try {
-            const dataTransfer = new DataTransfer();
-            dataTransfer.items.add(file);
-            fileInput.files = dataTransfer.files;
-            console.log('File reassigned to fileInput:', fileInput.files.length);
-        } catch (error) {
-            console.error('Error reassigning file to input:', error);
-        }
-    }
-    
-    console.log('Preview created successfully');
-    console.log('=== handleFileSelect ended ===');
+
+    // Compress image before showing preview
+    compressImage(file)
+        .then(compressedFile => {
+            logUploadEvent('compression_success', {
+                originalSize: file.size,
+                compressedSize: compressedFile.size,
+                compressionRatio: ((file.size - compressedFile.size) / file.size * 100).toFixed(2)
+            });
+            console.log('Image compressed successfully');
+            
+            // Show preview
+            if (previewContainer) {
+                previewContainer.innerHTML = `
+                    <div class="w-full max-w-xs">
+                        <img src="${URL.createObjectURL(compressedFile)}" 
+                             alt="Preview" 
+                             class="w-full h-auto rounded-lg shadow-lg max-h-48 object-cover" />
+                        <div class="mt-2 text-center text-sm text-slate-400">
+                            <div>${compressedFile.name}</div>
+                            <div>ขนาด: ${(compressedFile.size / 1024).toFixed(1)} KB</div>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            if (placeholder) placeholder.classList.add('hidden');
+            if (saveBtn) saveBtn.disabled = false;
+            
+            // Store the compressed file for upload
+            window.compressedEvidenceFile = compressedFile;
+            
+            logUploadEvent('file_selection_completed', {
+                fileName: compressedFile.name,
+                compressedSize: compressedFile.size
+            });
+            console.log('File selection completed successfully');
+        })
+        .catch(error => {
+            logUploadEvent('compression_failed', { 
+                error: error.message,
+                fileName: file.name
+            });
+            console.error('Image compression failed:', error);
+            showAlert('เกิดข้อผิดพลาดในการประมวลผลรูปภาพ', 'error');
+            clearEvidenceSelection();
+        });
 }
 
 function clearEvidenceSelection() {
     console.log('=== clearEvidenceSelection started ===');
     
-    const preview = document.getElementById('evidence-preview');
-    const placeholder = document.getElementById('evidence-placeholder');
-    const saveBtn = document.getElementById('evidence-save-btn');
-    const errorMsg = document.getElementById('evidence-error');
+    // Reset both file inputs
     const fileInput = document.getElementById('evidence-image-input');
     const cameraInput = document.getElementById('evidence-camera-input');
+    if(fileInput) fileInput.value = '';
+    if(cameraInput) cameraInput.value = '';
+    
+    // Clear stored compressed file
+    window.compressedEvidenceFile = null;
+    
+    // UI elements
+    const previewContainer = document.getElementById('evidence-preview');
+    const placeholder = document.getElementById('evidence-placeholder');
+    const saveBtn = document.getElementById('evidence-save-btn');
     const progressContainer = document.getElementById('upload-progress-container');
-    const uploadStatus = document.getElementById('upload-status');
-    
-    console.log('UI elements found:', {
-        preview: !!preview,
-        placeholder: !!placeholder,
-        saveBtn: !!saveBtn,
-        errorMsg: !!errorMsg,
-        fileInput: !!fileInput,
-        cameraInput: !!cameraInput,
-        progressContainer: !!progressContainer,
-        uploadStatus: !!uploadStatus
-    });
-    
-    // Clear file inputs
-    if (fileInput) fileInput.value = '';
-    if (cameraInput) cameraInput.value = '';
-    
-    // Clear preview
-    if (preview) {
-        preview.innerHTML = '';
-        preview.classList.add('hidden');
-    }
-    
-    // Show placeholder
-    if (placeholder) {
+    const errorMsg = document.getElementById('evidence-error');
+
+    // Reset preview
+    if(previewContainer) previewContainer.innerHTML = '';
+    if(placeholder) {
+        placeholder.innerHTML = `
+            <i class="fas fa-cloud-upload-alt text-4xl mb-2"></i>
+            <span class="text-base text-center">ลากไฟล์มาวาง หรือเลือกวิธีอัพโหลดด้านบน</span>
+            <span class="text-sm text-slate-500 mt-1">รองรับไฟล์: JPG, PNG, GIF (สูงสุด 10MB)</span>
+        `;
         placeholder.classList.remove('hidden');
     }
     
-    // Reset save button
-    if (saveBtn) {
-        saveBtn.disabled = true;
-        saveBtn.innerHTML = '<i class="fas fa-save"></i> บันทึก';
-    }
-    
-    // Clear error message
-    if (errorMsg) {
-        errorMsg.textContent = '';
-    }
-    
-    // Hide progress indicators
-    if (progressContainer) {
-        progressContainer.classList.add('hidden');
-    }
-    if (uploadStatus) {
-        uploadStatus.classList.add('hidden');
-    }
+    // Reset button and progress
+    if(saveBtn) saveBtn.disabled = true;
+    if(progressContainer) progressContainer.classList.add('hidden');
+    if(errorMsg) errorMsg.textContent = '';
     
     console.log('Evidence selection cleared');
-    console.log('=== clearEvidenceSelection ended ===');
 }
 
 function setupEvidenceModalListeners() {
-    console.log('=== setupEvidenceModalListeners started ===');
+    console.log('=== Setting up evidence modal listeners ===');
     
-    const dropzone = document.getElementById('evidence-dropzone');
     const fileInput = document.getElementById('evidence-image-input');
     const cameraInput = document.getElementById('evidence-camera-input');
+    const dropZone = document.getElementById('evidence-dropzone');
     const saveBtn = document.getElementById('evidence-save-btn');
-    const clearBtn = document.getElementById('evidence-clear-btn');
+    const closeBtn = document.getElementById('close-evidence-modal');
+    const cancelBtn = document.getElementById('evidence-clear-btn');
     const cameraBtn = document.getElementById('camera-btn');
     const galleryBtn = document.getElementById('gallery-btn');
     const fileBtn = document.getElementById('file-btn');
+    const debugBtn = document.getElementById('evidence-debug-btn');
 
-    console.log('Elements found:', {
-        dropzone: !!dropzone,
+    console.log('Found elements:', {
         fileInput: !!fileInput,
         cameraInput: !!cameraInput,
+        dropZone: !!dropZone,
         saveBtn: !!saveBtn,
-        clearBtn: !!clearBtn,
+        closeBtn: !!closeBtn,
+        cancelBtn: !!cancelBtn,
         cameraBtn: !!cameraBtn,
         galleryBtn: !!galleryBtn,
-        fileBtn: !!fileBtn
+        fileBtn: !!fileBtn,
+        debugBtn: !!debugBtn
     });
 
-    // Camera button
+    if (!fileInput || !dropZone || !saveBtn || !closeBtn || !cancelBtn) {
+        console.warn('One or more evidence modal elements not found. Listeners not attached.');
+        return;
+    }
+    
+    // Camera button - trigger camera input
     if (cameraBtn) {
-        cameraBtn.addEventListener('click', () => {
+        cameraBtn.addEventListener('click', (e) => {
+            e.preventDefault();
             console.log('Camera button clicked');
-            cameraInput.click();
+            console.log('Device info:', {
+                userAgent: navigator.userAgent,
+                isMobile: isMobileDevice(),
+                protocol: location.protocol,
+                hostname: location.hostname
+            });
+            
+            // Check if device supports camera
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                console.warn('Camera not supported on this device');
+                showAlert('อุปกรณ์นี้ไม่รองรับการถ่ายรูป กรุณาใช้แกลเลอรี่แทน', 'warning');
+                return;
+            }
+            
+            // Check if we're on HTTPS (required for camera access)
+            if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
+                console.warn('Camera requires HTTPS');
+                showAlert('การถ่ายรูปต้องใช้ HTTPS กรุณาใช้แกลเลอรี่แทน', 'warning');
+                return;
+            }
+            
+            // For mobile devices, try to use the camera directly
+            if (isMobileDevice()) {
+                console.log('Mobile device detected, using camera input');
+                // Update camera input attributes for better mobile support
+                if (cameraInput) {
+                    cameraInput.setAttribute('capture', 'environment');
+                    cameraInput.setAttribute('accept', 'image/*');
+                }
+            }
+            
+            // Trigger camera input
+            if (cameraInput) {
+                console.log('Triggering camera input');
+                try {
+                    cameraInput.click();
+                } catch (error) {
+                    console.error('Error triggering camera input:', error);
+                    showAlert('เกิดข้อผิดพลาดในการเปิดกล้อง กรุณาลองใหม่', 'error');
+                }
+            } else {
+                console.error('Camera input not found');
+                showAlert('เกิดข้อผิดพลาด: ไม่พบ input สำหรับกล้อง', 'error');
+            }
         });
-        console.log('Camera button listener added');
-    } else {
-        console.error('Camera button not found');
     }
 
-    // Gallery button
+    // Gallery button - trigger file input
     if (galleryBtn) {
-        galleryBtn.addEventListener('click', () => {
+        galleryBtn.addEventListener('click', (e) => {
+            e.preventDefault();
             console.log('Gallery button clicked');
-            fileInput.click();
+            if (fileInput) {
+                fileInput.click();
+            }
         });
-        console.log('Gallery button listener added');
-    } else {
-        console.error('Gallery button not found');
     }
 
-    // File button
+    // File button - trigger file input
     if (fileBtn) {
-        fileBtn.addEventListener('click', () => {
+        fileBtn.addEventListener('click', (e) => {
+            e.preventDefault();
             console.log('File button clicked');
+            if (fileInput) {
+                fileInput.click();
+            }
+        });
+    }
+
+    // Trigger file input from drop zone click
+    dropZone.addEventListener('click', (e) => {
+        // Don't trigger if clicking on preview or placeholder
+        if (!e.target.closest('#evidence-preview') && !e.target.closest('#evidence-placeholder')) {
+            console.log('Drop zone clicked, opening file picker');
             fileInput.click();
-        });
-        console.log('File button listener added');
-    } else {
-        console.error('File button not found');
-    }
+        }
+    });
 
-    // Clear button
-    if (clearBtn) {
-        clearBtn.addEventListener('click', () => {
-            console.log('Clear button clicked');
-            clearEvidenceSelection();
-        });
-        console.log('Clear button listener added');
-    } else {
-        console.error('Clear button not found');
-    }
+    // Handle file selection from file input
+    fileInput.addEventListener('change', (e) => {
+        console.log('File input change event:', e.target.files.length, 'files');
+        if (e.target.files.length > 0) {
+            const file = e.target.files[0];
+            console.log('File selected from file input:', file.name, file.size, file.type);
+            handleFileSelect(file);
+        }
+    });
 
-    // Dropzone click
-    if (dropzone) {
-        dropzone.addEventListener('click', () => {
-            console.log('Dropzone clicked');
-            fileInput.click();
-        });
-        console.log('Dropzone click listener added');
-    } else {
-        console.error('Dropzone not found');
-    }
+    // Handle file selection from camera input
+    cameraInput.addEventListener('change', (e) => {
+        console.log('Camera input change event:', e.target.files.length, 'files');
+        if (e.target.files.length > 0) {
+            const file = e.target.files[0];
+            console.log('File selected from camera input:', file.name, file.size, file.type);
+            handleFileSelect(file);
+        }
+    });
+
+    // Drag and Drop listeners
+    dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        console.log('File dragged over drop zone');
+        dropZone.classList.add('border-blue-500', 'bg-slate-700/50');
+    });
+
+    dropZone.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        console.log('File dragged out of drop zone');
+        dropZone.classList.remove('border-blue-500', 'bg-slate-700/50');
+    });
+
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        console.log('File dropped on drop zone');
+        dropZone.classList.remove('border-blue-500', 'bg-slate-700/50');
+        if (e.dataTransfer.files.length > 0) {
+            const file = e.dataTransfer.files[0];
+            console.log('File dropped:', file.name, file.size, file.type);
+            // Manually set the files to the file input
+            fileInput.files = e.dataTransfer.files;
+            handleFileSelect(file);
+        }
+    });
+
+    // Button listeners
+    saveBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        console.log('Save button clicked');
+        handleEvidenceUpload();
+    });
     
-    // Drag and drop functionality
-    if (dropzone) {
-        dropzone.addEventListener('dragover', (e) => {
+    closeBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        console.log('Close button clicked');
+        closeEvidenceModal();
+    });
+    
+    cancelBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        console.log('Cancel button clicked');
+        clearEvidenceSelection();
+    });
+
+    // Debug button - show upload logs
+    if (debugBtn) {
+        debugBtn.addEventListener('click', (e) => {
             e.preventDefault();
-            dropzone.classList.add('border-blue-500', 'bg-slate-700');
+            console.log('Debug button clicked');
+            showUploadLogs();
         });
-
-        dropzone.addEventListener('dragleave', () => {
-            dropzone.classList.remove('border-blue-500', 'bg-slate-700');
-        });
-
-        dropzone.addEventListener('drop', (e) => {
-            e.preventDefault();
-            dropzone.classList.remove('border-blue-500', 'bg-slate-700');
-            const files = e.dataTransfer.files;
-            console.log('Files dropped:', files.length);
-            if (files.length) {
-                // Create a new FileList-like object and assign to file input
-                const file = files[0];
-                
-                // Create a new DataTransfer object
-                const dataTransfer = new DataTransfer();
-                dataTransfer.items.add(file);
-                
-                // Assign the file to the file input
-                fileInput.files = dataTransfer.files;
-                
-                console.log('File assigned to input:', fileInput.files.length);
-                handleFileSelect(file);
-            }
-        });
-        console.log('Drag and drop listeners added');
-    }
-    
-    // File input change
-    if (fileInput) {
-        fileInput.addEventListener('change', () => {
-            console.log('File input changed, files:', fileInput.files.length);
-            if (fileInput.files.length) {
-                handleFileSelect(fileInput.files[0]);
-            }
-        });
-        console.log('File input change listener added');
-    } else {
-        console.error('File input not found');
     }
 
-    // Camera input change
-    if (cameraInput) {
-        cameraInput.addEventListener('change', () => {
-            console.log('Camera input changed, files:', cameraInput.files.length);
-            if (cameraInput.files.length) {
-                handleFileSelect(cameraInput.files[0]);
-            }
-        });
-        console.log('Camera input change listener added');
-    } else {
-        console.error('Camera input not found');
-    }
-
-    // Save button
-    if (saveBtn) {
-        saveBtn.addEventListener('click', () => {
-            console.log('Save button clicked');
-            handleEvidenceUpload();
-        });
-        console.log('Save button listener added');
-    } else {
-        console.error('Save button not found');
-    }
-    
-    console.log('=== setupEvidenceModalListeners ended ===');
+    console.log('Evidence modal listeners setup completed');
 }
 
 function generateQRCode(record) {
@@ -2052,9 +2226,11 @@ function downloadQRCode() {
 
 async function deleteEvidence(key) {
     console.log('=== deleteEvidence started ===');
+    logUploadEvent('evidence_delete_started', { billKey: key });
     console.log('Key parameter (bill key):', key);
     
     if (!key) {
+        logUploadEvent('evidence_delete_failed', { reason: 'no_key_provided' });
         showAlert('ไม่พบข้อมูล (key) ที่ต้องการลบหลักฐาน', 'error');
         return;
     }
@@ -2065,25 +2241,40 @@ async function deleteEvidence(key) {
         const data = snapshot.val();
         
         if (!data || !data.room) {
+            logUploadEvent('evidence_delete_failed', { reason: 'no_bill_data' });
             showAlert('ไม่พบข้อมูลห้องสำหรับบิลนี้ ไม่สามารถตรวจสอบสิทธิ์ได้', 'error');
             return;
         }
 
         // Check if payment is already confirmed
         if (data.paymentConfirmed === true) {
+            logUploadEvent('evidence_delete_failed', { reason: 'payment_already_confirmed' });
             showAlert('ไม่สามารถลบหลักฐานได้ เนื่องจากเจ้าของห้องได้ยืนยันการชำระเงินแล้ว', 'error');
             return;
         }
 
         // Permission to delete evidence - using 'canUploadEvidence' for now, might need a specific 'canDeleteEvidence'
         if (!hasPermission('canUploadEvidence', data.room)) {
+            logUploadEvent('evidence_delete_failed', { reason: 'no_permission', room: data.room });
             showAlert(`คุณไม่มีสิทธิ์ลบหลักฐานสำหรับห้อง ${data.room}`, 'error');
             return;
         }
 
         if (!data.evidenceUrl) {
+            logUploadEvent('evidence_delete_failed', { reason: 'no_evidence_url' });
             showAlert('ไม่พบหลักฐานที่ต้องการลบ (URL missing)', 'info');
             return;
+        }
+
+        // Get evidence metadata for logging
+        const metadata = await getEvidenceMetadata(data.evidenceUrl);
+        if (metadata) {
+            console.log('Evidence metadata:', metadata);
+            logUploadEvent('evidence_metadata_retrieved', {
+                fileName: metadata.name,
+                size: metadata.size,
+                contentType: metadata.contentType
+            });
         }
 
         // Confirm deletion with new modal
@@ -2093,43 +2284,73 @@ async function deleteEvidence(key) {
             confirmButtonText: 'ใช่, ลบเลย',
             confirmButtonClass: 'bg-orange-600 hover:bg-orange-700',
             onConfirm: async () => {
-                // Delete from Firebase Storage if URL exists
-                if (data.evidenceUrl && firebase.storage) {
-                    try {
-                        const storageRef = firebase.storage().refFromURL(data.evidenceUrl);
-                        await storageRef.delete();
-                        console.log('Evidence file deleted from storage');
-                    } catch (storageError) {
-                        console.error('Error deleting from storage:', storageError);
-                        showAlert('ลบไฟล์หลักฐานจาก Storage ไม่สำเร็จ แต่อัปเดตข้อมูลในระบบแล้ว', 'warning');
+                try {
+                    // Delete from Firebase Storage using new function
+                    if (data.evidenceUrl) {
+                        const deleteResult = await deleteEvidenceFromStorage(data.evidenceUrl, key);
+                        
+                        if (!deleteResult.success) {
+                            console.warn('Storage deletion failed:', deleteResult.error);
+                            logUploadEvent('evidence_delete_storage_failed', deleteResult);
+                            // Continue with database update even if storage deletion fails
+                        } else {
+                            console.log('Evidence file deleted from storage successfully');
+                            logUploadEvent('evidence_delete_storage_success', deleteResult);
+                        }
                     }
-                }
-                
-                // Update database to remove evidence references
-                await db.ref(`electricityData/${key}`).update({
-                    evidenceUrl: null,
-                    evidenceFileName: null,
-                    evidenceFileSize: null,
-                    evidenceFileType: null,
-                    evidenceUploadedAt: null,
-                    evidenceUploadedBy: null,
-                    evidenceDeletedAt: new Date().toISOString(),
-                    evidenceDeletedBy: auth.currentUser?.uid || 'unknown'
-                });
-                
-                showAlert('ลบหลักฐานเรียบร้อยแล้ว', 'success');
-                
-                // Refresh the table
-                const room = new URLSearchParams(window.location.search).get('room');
-                if (room) {
-                    renderHistoryTable(room);
-                } else {
-                    renderHomeRoomCards();
+                    
+                    // Update database to remove evidence references
+                    const updateData = {
+                        evidenceUrl: null,
+                        evidenceFileName: null,
+                        evidenceFileSize: null,
+                        evidenceFileType: null,
+                        evidenceUploadedAt: null,
+                        evidenceUploadedBy: null,
+                        evidenceDeletedAt: new Date().toISOString(),
+                        evidenceDeletedBy: auth.currentUser?.uid || 'unknown'
+                    };
+                    
+                    // Add storage path if available
+                    if (data.evidenceStoragePath) {
+                        updateData.evidenceStoragePath = null;
+                    }
+                    
+                    await db.ref(`electricityData/${key}`).update(updateData);
+                    
+                    logUploadEvent('evidence_delete_success', { 
+                        billKey: key,
+                        room: data.room,
+                        deletedBy: auth.currentUser?.uid
+                    });
+                    
+                    showAlert('ลบหลักฐานเรียบร้อยแล้ว', 'success');
+                    
+                    // Refresh the table
+                    const room = new URLSearchParams(window.location.search).get('room');
+                    if (room) {
+                        renderHistoryTable(room);
+                    } else {
+                        renderHomeRoomCards();
+                    }
+                    
+                } catch (error) {
+                    logUploadEvent('evidence_delete_failed', { 
+                        reason: 'database_update_error',
+                        error: error.message
+                    });
+                    console.error('Error during evidence deletion:', error);
+                    showAlert('เกิดข้อผิดพลาดในการลบหลักฐาน กรุณาลองใหม่อีกครั้ง', 'error');
                 }
             }
         });
         
     } catch (error) {
+        logUploadEvent('evidence_delete_failed', { 
+            reason: 'general_error',
+            error: error.message,
+            stack: error.stack
+        });
         console.error('Error deleting evidence:', error);
         showAlert('เกิดข้อผิดพลาดในการลบหลักฐาน', 'error');
     }
@@ -2487,7 +2708,17 @@ function closeActionsMenu() {
 
 function openActionsMenu(event, bill) {
     event.stopPropagation();
-    closeActionsMenu(); // Close any existing menu first
+    const existingMenu = document.getElementById('global-actions-menu');
+    const isMenuOpenForThis = existingMenu && existingMenu.dataset.key === bill.key;
+
+    // First, close any existing menu.
+    closeActionsMenu();
+
+    // If the menu was already open for this button, just return.
+    // This creates the toggle effect.
+    if (isMenuOpenForThis) {
+        return;
+    }
 
     const room = new URLSearchParams(window.location.search).get('room');
     const isPaymentConfirmed = bill.paymentConfirmed === true;
@@ -2526,6 +2757,7 @@ function openActionsMenu(event, bill) {
     // Create menu container
     const menu = document.createElement('div');
     menu.id = 'global-actions-menu';
+    menu.dataset.key = bill.key; // Set a key to identify which button opened it
     menu.className = 'origin-top-right absolute mt-2 w-48 rounded-md shadow-lg bg-slate-800 ring-1 ring-black ring-opacity-5 focus:outline-none z-30 border border-slate-700';
     menu.innerHTML = `<div class="py-1" role="menu" aria-orientation="vertical">${menuItems}</div>`;
     
@@ -2535,7 +2767,7 @@ function openActionsMenu(event, bill) {
     const rect = event.currentTarget.getBoundingClientRect();
     menu.style.position = 'fixed';
     
-    // Position it, then check if it overflows, and adjust if necessary
+    // Position it, then check if it overflows, and adjust if it does
     let top = rect.bottom + 4;
     let left = rect.right - menu.offsetWidth;
 
@@ -2548,4 +2780,704 @@ function openActionsMenu(event, bill) {
 
     menu.style.top = `${top}px`;
     menu.style.left = `${left}px`;
+}
+
+// Add bulk data entry functionality
+function addBulkDataEntryButton() {
+    const headerSection = document.querySelector('#my-rooms-content .flex.items-center.gap-3');
+    if (!headerSection || !hasPermission('canAddNewBills') || document.getElementById('btn-bulk-data-entry')) return;
+
+    const bulkDataBtn = document.createElement('button');
+    bulkDataBtn.id = 'btn-bulk-data-entry';
+    bulkDataBtn.className = 'btn btn-accent'; // Changed from btn-success
+    bulkDataBtn.innerHTML = '<i class="fas fa-database"></i>เพิ่มข้อมูลทุกห้อง';
+    bulkDataBtn.onclick = openBulkDataEntryModal;
+    headerSection.appendChild(bulkDataBtn);
+}
+
+function openBulkDataEntryModal() {
+    if (document.getElementById('bulk-data-modal')) {
+        openModal('bulk-data-modal');
+        return;
+    }
+    
+    // Using a more robust way to create and append the modal
+    const modalContainer = document.createElement('div');
+    modalContainer.innerHTML = `
+    <div id="bulk-data-modal" class="modal-backdrop">
+        <div class="modal-content max-w-4xl">
+            <div class="modal-header">
+                <h2 class="modal-title text-accent-400"><i class="fas fa-database mr-3"></i>เพิ่มข้อมูลค่าไฟ-น้ำทุกห้อง</h2>
+                <button id="close-bulk-data-modal" class="modal-close-btn">&times;</button>
+            </div>
+            <form id="bulk-data-form">
+                <div class="modal-body">
+                    <p>Loading form...</p>
+                </div>
+                <div class="modal-footer">
+                     <button type="submit" class="btn btn-accent w-full text-lg"><i class="fas fa-save"></i>บันทึกข้อมูลทุกห้อง</button>
+                </div>
+            </form>
+        </div>
+    </div>`;
+    
+    document.body.appendChild(modalContainer.firstElementChild);
+
+    const modal = document.getElementById('bulk-data-modal');
+    modal.querySelector('#close-bulk-data-modal').onclick = () => closeModal('bulk-data-modal');
+    modal.querySelector('#bulk-data-form').onsubmit = handleBulkDataEntry;
+
+    // Populate form content asynchronously
+    populateBulkRoomsData(); 
+    
+    openModal('bulk-data-modal');
+}
+
+async function populateBulkRoomsData() {
+    const modalBody = document.querySelector('#bulk-data-modal .modal-body');
+
+    if (!modalBody) {
+        console.error('Bulk modal body not found!');
+        return;
+    }
+
+    try {
+        const allBills = await loadFromFirebase();
+        const user = window.currentUser;
+        const userRole = window.currentUserRole;
+        const userData = window.currentUserData;
+
+        let displayableBills = [];
+        if (userRole === 'admin' || hasPermission('canViewAllRooms')) {
+            displayableBills = allBills;
+        } else if (userRole === '1' && userData && userData.managedRooms) {
+            displayableBills = allBills.filter(bill => userData.managedRooms.includes(bill.room));
+        }
+
+        const rooms = [...new Set(displayableBills.map(bill => bill.room))].sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
+
+        if (rooms.length === 0) {
+            modalBody.innerHTML = '<p class="text-center text-red-400">ไม่พบห้องพักที่คุณมีสิทธิ์เข้าถึง</p>';
+            return;
+        }
+
+        // --- Create the full form HTML ---
+        const formHTML = `
+            <div class="space-y-6">
+                <!-- Section 1: Date & Rates -->
+                <fieldset class="bg-slate-700/50 rounded-xl p-5">
+                    <legend class="font-semibold text-lg text-white px-2 flex items-center gap-2"><i class="fas fa-cogs text-violet-300"></i>ตั้งค่าโดยรวม</legend>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
+                        <div class="form-group">
+                            <label class="form-label" for="bulk-date">วันที่บันทึก *</label>
+                            <input type="text" id="bulk-date" class="form-input" required placeholder="DD/MM/YYYY">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="bulk-due-date">วันครบกำหนด</label>
+                            <input type="text" id="bulk-due-date" class="form-input" placeholder="DD/MM/YYYY">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="bulk-electricity-rate">ค่าไฟ/หน่วย *</label>
+                            <input type="number" step="0.01" id="bulk-electricity-rate" class="form-input" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="bulk-water-rate">ค่าน้ำ/หน่วย</label>
+                            <input type="number" step="0.01" id="bulk-water-rate" class="form-input">
+                        </div>
+                    </div>
+                </fieldset>
+
+                <!-- Section 2: Room Data -->
+                <fieldset class="bg-slate-700/50 rounded-xl p-5">
+                    <legend class="font-semibold text-lg text-white px-2 flex items-center gap-2"><i class="fas fa-door-open text-amber-300"></i>ข้อมูลมิเตอร์ห้องพัก</legend>
+                    <div id="bulk-rooms-list" class="space-y-4 mt-4 max-h-[40vh] overflow-y-auto pr-3">
+                        ${rooms.map(room => {
+                            const latestBill = displayableBills
+                                .filter(bill => bill.room === room && bill.date)
+                                .sort((a, b) => new Date(b.date.split('/').reverse().join('-')) - new Date(a.date.split('/').reverse().join('-')))[0] || {};
+                            
+                            return `
+                            <div class="bg-slate-800 rounded-lg p-4 border border-slate-600">
+                                <h4 class="text-lg font-semibold text-white mb-3">ห้อง ${room}</h4>
+                                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                                    <div class="form-group">
+                                        <label class="form-label text-sm" for="bulk-electricity-current-${room}">มิเตอร์ไฟ (ปัจจุบัน)</label>
+                                        <input type="number" id="bulk-electricity-current-${room}" class="form-input text-sm" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label text-sm" for="bulk-electricity-previous-${room}">มิเตอร์ไฟ (ก่อนหน้า)</label>
+                                        <input type="number" id="bulk-electricity-previous-${room}" class="form-input text-sm bg-slate-900/50" value="${latestBill.current || ''}" readonly>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label text-sm" for="bulk-water-current-${room}">มิเตอร์น้ำ (ปัจจุบัน)</label>
+                                        <input type="number" id="bulk-water-current-${room}" class="form-input text-sm">
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label text-sm" for="bulk-water-previous-${room}">มิเตอร์น้ำ (ก่อนหน้า)</label>
+                                        <input type="number" id="bulk-water-previous-${room}" class="form-input text-sm bg-slate-900/50" value="${latestBill.waterCurrent || ''}" readonly>
+                                    </div>
+                                </div>
+                            </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </fieldset>
+            </div>
+        `;
+
+        modalBody.innerHTML = formHTML;
+
+    } catch (error) {
+        console.error('Error populating bulk rooms data:', error);
+        modalBody.innerHTML = '<p class="text-center text-red-400">เกิดข้อผิดพลาดในการโหลดข้อมูลห้อง</p>';
+    }
+}
+
+async function handleBulkDataEntry(event) {
+    event.preventDefault();
+
+    const form = event.target;
+    const submitBtn = form.querySelector('button[type="submit"]');
+    if (!submitBtn) return;
+
+    const originalText = submitBtn.innerHTML;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> กำลังบันทึก...';
+    submitBtn.disabled = true;
+
+    try {
+        const date = document.getElementById('bulk-date').value;
+        const dueDate = document.getElementById('bulk-due-date').value;
+        const electricityRate = Number(document.getElementById('bulk-electricity-rate').value);
+        const waterRate = Number(document.getElementById('bulk-water-rate').value);
+
+        if (!date || !electricityRate) { // Water rate can be optional
+            showAlert('กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน (วันที่, ค่าไฟ/หน่วย)', 'error');
+            throw new Error("Missing required fields");
+        }
+        
+        const roomInputs = document.querySelectorAll('#bulk-rooms-list > div');
+        const roomsToProcess = Array.from(roomInputs).map(div => div.querySelector('h4').textContent.replace('ห้อง ', '').trim());
+        
+        let successCount = 0;
+        let errorCount = 0;
+        let errorRooms = [];
+
+        const allBills = await loadFromFirebase(); // to get the name
+
+        for (const room of roomsToProcess) {
+            try {
+                const currentElectricityInput = document.getElementById(`bulk-electricity-current-${room}`);
+                const previousElectricityInput = document.getElementById(`bulk-electricity-previous-${room}`);
+                const currentWaterInput = document.getElementById(`bulk-water-current-${room}`);
+                const previousWaterInput = document.getElementById(`bulk-water-previous-${room}`);
+
+                const currentElectricity = Number(currentElectricityInput.value);
+                const previousElectricity = Number(previousElectricityInput.value);
+
+                if (isNaN(currentElectricity) || currentElectricity === 0 || isNaN(previousElectricity) || currentElectricity < previousElectricity) {
+                    console.warn(`Skipping room ${room} - invalid or missing electricity data.`);
+                    errorCount++;
+                    errorRooms.push(room);
+                    continue;
+                }
+                
+                const latestBillForRoom = allBills
+                    .filter(bill => bill.room === room)
+                    .sort((a, b) => new Date(b.date.split('/').reverse().join('-')) - new Date(a.date.split('/').reverse().join('-')))[0] || {};
+
+                const billData = {
+                    room: room,
+                    name: latestBillForRoom.name || 'ไม่มีชื่อ',
+                    date: date,
+                    dueDate: dueDate || '',
+                    current: currentElectricity,
+                    previous: previousElectricity,
+                    units: currentElectricity - previousElectricity,
+                    rate: electricityRate,
+                    total: (currentElectricity - previousElectricity) * electricityRate,
+                    timestamp: Date.now()
+                };
+
+                // Add water data if available
+                const currentWater = Number(currentWaterInput.value);
+                const previousWater = Number(previousWaterInput.value);
+                if (!isNaN(currentWater) && !isNaN(previousWater) && currentWater >= previousWater && waterRate > 0) {
+                     billData.waterCurrent = currentWater;
+                     billData.waterPrevious = previousWater;
+                     billData.waterUnits = currentWater - previousWater;
+                     billData.waterRate = waterRate;
+                     billData.waterTotal = (currentWater - previousWater) * waterRate;
+                } else {
+                     billData.waterCurrent = 0;
+                     billData.waterPrevious = 0;
+                     billData.waterUnits = 0;
+                     billData.waterRate = 0;
+                     billData.waterTotal = 0;
+                }
+
+                await saveToFirebase(billData);
+                successCount++;
+            } catch (innerError) {
+                console.error(`Error processing room ${room}:`, innerError);
+                errorCount++;
+                errorRooms.push(room);
+            }
+        }
+
+        if (successCount > 0) {
+            let successMessage = `บันทึกข้อมูลสำเร็จ ${successCount} ห้อง`;
+            if (errorCount > 0) {
+                successMessage += ` (มีข้อผิดพลาด ${errorCount} ห้อง: ${errorRooms.join(', ')})`;
+            }
+            showAlert(successMessage, 'success');
+        } else {
+            showAlert(`ไม่สามารถบันทึกข้อมูลได้ มีข้อผิดพลาด ${errorCount} ห้อง`, 'error');
+        }
+
+        closeModal('bulk-data-modal');
+        renderHomeRoomCards();
+
+    } catch (error) {
+        console.error('Error in bulk data entry:', error);
+        showAlert('เกิดข้อผิดพลาดในการบันทึกข้อมูล: ' + error.message, 'error');
+    } finally {
+        submitBtn.innerHTML = originalText;
+        submitBtn.disabled = false;
+    }
+}
+
+// --- Modal Control Functions with Animation ---
+function openModal(modalId) {
+    const modal = document.getElementById(modalId);
+    if (!modal) return;
+
+    document.body.classList.add('modal-open');
+    modal.style.display = 'flex';
+    // Use setTimeout to allow the display property to apply before adding the class for transition
+    setTimeout(() => {
+        modal.classList.add('active');
+    }, 10); 
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    // Apply staggered entrance animations to elements with data-animation attribute
+    const animatedElements = document.querySelectorAll('[data-animation]');
+    animatedElements.forEach((el, index) => {
+        // Ensure the element is visible before animating
+        if (window.getComputedStyle(el).display !== 'none') {
+            el.classList.add('animate-on-load');
+            el.style.animationDelay = `${index * 120}ms`;
+        }
+    });
+});
+
+// Helper function to re-apply animation when tabs are switched
+function triggerTabAnimation(tabContentId) {
+    const animatedElements = document.querySelectorAll(`#${tabContentId} [data-animation]`);
+    animatedElements.forEach((el, index) => {
+        el.classList.remove('animate-on-load');
+        // Void line to trigger reflow, which is necessary to restart a CSS animation
+        void el.offsetWidth; 
+        el.classList.add('animate-on-load');
+        el.style.animationDelay = `${index * 120}ms`;
+    });
+}
+
+// --- Event Listeners for Evidence Upload Modal ---
+document.addEventListener('DOMContentLoaded', function() {
+    // This entire block only runs on pages with the evidence modal (i.e., index.html)
+    const evidenceModal = document.getElementById('evidence-modal');
+    if (!evidenceModal) {
+        return; // Do nothing if the modal isn't on the page
+    }
+
+    const cameraBtn = document.getElementById('camera-btn');
+    const galleryBtn = document.getElementById('gallery-btn');
+    const fileBtn = document.getElementById('file-btn');
+    const imageInput = document.getElementById('evidence-image-input');
+    const cameraInput = document.getElementById('evidence-camera-input');
+    const dropzone = document.getElementById('evidence-dropzone');
+    const saveBtn = document.getElementById('evidence-save-btn');
+    const clearBtn = document.getElementById('evidence-clear-btn');
+    let fileToUpload = null;
+
+    // --- Function to programmatically click a file input ---
+    function triggerFileInput(inputElement) {
+        if (!inputElement) return;
+        inputElement.value = null; // Reset to allow re-selecting the same file
+        inputElement.click();
+    }
+
+    // --- Attach listeners to the upload buttons ---
+    if (cameraBtn) cameraBtn.addEventListener('click', () => triggerFileInput(cameraInput));
+    if (galleryBtn) galleryBtn.addEventListener('click', () => triggerFileInput(imageInput));
+    if (fileBtn) fileBtn.addEventListener('click', () => triggerFileInput(imageInput));
+
+    // --- Function to handle when a file is selected ---
+    function handleFileSelect(event) {
+        const file = event.target.files[0];
+        if (file) {
+            // Add file type and size validation
+            const allowedTypes = ['image/jpeg', 'image/png', 'image/gif'];
+            const maxSize = 5 * 1024 * 1024; // 5 MB
+            const errorEl = document.getElementById('evidence-error');
+            errorEl.textContent = ''; // Clear previous errors
+
+            if (!allowedTypes.includes(file.type)) {
+                errorEl.textContent = 'ชนิดไฟล์ไม่ถูกต้อง กรุณาเลือกไฟล์ JPG, PNG, หรือ GIF';
+                return;
+            }
+            if (file.size > maxSize) {
+                errorEl.textContent = 'ไฟล์มีขนาดใหญ่เกินไป (สูงสุด 5MB)';
+                return;
+            }
+            
+            fileToUpload = file;
+            displayPreview(file);
+            if (saveBtn) saveBtn.disabled = false;
+        }
+    }
+
+    // --- Attach listeners to the hidden file inputs ---
+    if (imageInput) imageInput.addEventListener('change', handleFileSelect);
+    if (cameraInput) cameraInput.addEventListener('change', handleFileSelect);
+
+    // --- Function to show a preview of the selected image ---
+    function displayPreview(file) {
+        const previewContainer = document.getElementById('evidence-preview');
+        const placeholder = document.getElementById('evidence-placeholder');
+        if (!previewContainer || !placeholder) return;
+
+        previewContainer.innerHTML = ''; // Clear previous preview
+        placeholder.classList.add('hidden');
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const img = document.createElement('img');
+            img.src = e.target.result;
+            img.className = 'max-h-48 rounded-lg object-contain mx-auto';
+            previewContainer.appendChild(img);
+        };
+        reader.readAsDataURL(file);
+    }
+
+    // --- Function to clear the form ---
+    function resetUploadForm() {
+        fileToUpload = null;
+        if (imageInput) imageInput.value = null;
+        if (cameraInput) cameraInput.value = null;
+
+        const previewContainer = document.getElementById('evidence-preview');
+        const placeholder = document.getElementById('evidence-placeholder');
+        const errorEl = document.getElementById('evidence-error');
+
+        if (previewContainer) previewContainer.innerHTML = '';
+        if (placeholder) placeholder.classList.remove('hidden');
+        if (saveBtn) saveBtn.disabled = true;
+        if (errorEl) errorEl.textContent = '';
+        
+        const progressContainer = document.getElementById('upload-progress-container');
+        const statusEl = document.getElementById('upload-status');
+        if (progressContainer) progressContainer.classList.add('hidden');
+        if (statusEl) statusEl.classList.add('hidden');
+    }
+
+    if (clearBtn) clearBtn.addEventListener('click', resetUploadForm);
+    
+    // --- Attach listener to the save button ---
+    if (saveBtn) {
+        saveBtn.addEventListener('click', async () => {
+            const currentKey = evidenceModal.dataset.key;
+            if (!fileToUpload || !currentKey) {
+                console.error("ไม่มีไฟล์หรือ Key สำหรับบันทึก");
+                return;
+            }
+            await uploadEvidence(currentKey, fileToUpload);
+        });
+    }
+
+    // --- Drag and Drop functionality ---
+    if (dropzone) {
+        dropzone.addEventListener('click', (e) => {
+            if (e.target === dropzone || e.target.id === 'evidence-placeholder' || placeholder.contains(e.target)) {
+                 triggerFileInput(imageInput);
+            }
+        });
+        
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropzone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                dropzone.classList.add('border-blue-500', 'bg-slate-700/50');
+            }, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropzone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                dropzone.classList.remove('border-blue-500', 'bg-slate-700/50');
+            }, false);
+        });
+
+        dropzone.addEventListener('drop', (e) => {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            if (files.length > 0) {
+                 // Create a synthetic event to reuse the handleFileSelect logic
+                handleFileSelect({ target: { files: files } });
+            }
+        });
+    }
+});
+
+// Add comprehensive logging utility
+function logUploadEvent(event, data = {}) {
+    const timestamp = new Date().toISOString();
+    const logEntry = {
+        timestamp,
+        event,
+        userAgent: navigator.userAgent,
+        isMobile: isMobileDevice(),
+        protocol: location.protocol,
+        url: window.location.href,
+        ...data
+    };
+    
+    console.log('=== UPLOAD LOG ===', logEntry);
+    
+    // Store in session storage for debugging
+    try {
+        const logs = JSON.parse(sessionStorage.getItem('uploadLogs') || '[]');
+        logs.push(logEntry);
+        // Keep only last 50 logs
+        if (logs.length > 50) {
+            logs.splice(0, logs.length - 50);
+        }
+        sessionStorage.setItem('uploadLogs', JSON.stringify(logs));
+    } catch (error) {
+        console.warn('Failed to store upload log:', error);
+    }
+}
+
+// Add mobile detection utility
+
+// Add function to display upload logs for debugging
+function showUploadLogs() {
+    try {
+        const logs = JSON.parse(sessionStorage.getItem('uploadLogs') || '[]');
+        if (logs.length === 0) {
+            showAlert('ไม่มีข้อมูล log การอัปโหลด', 'info');
+            return;
+        }
+        
+        const logText = logs.map(log => 
+            `[${log.timestamp}] ${log.event}: ${JSON.stringify(log, null, 2)}`
+        ).join('\n\n');
+        
+        // Create a modal to show logs
+        const logModal = document.createElement('div');
+        logModal.className = 'fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50';
+        logModal.innerHTML = `
+            <div class="bg-slate-800 border border-slate-700 rounded-2xl p-6 w-full max-w-4xl mx-4 shadow-lg max-h-[80vh] overflow-hidden flex flex-col">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold text-white">Upload Logs (Debug)</h2>
+                    <button class="text-2xl text-slate-400 hover:text-white" onclick="this.closest('.fixed').remove()">&times;</button>
+                </div>
+                <div class="flex-1 overflow-y-auto bg-slate-900 p-4 rounded-lg">
+                    <pre class="text-xs text-slate-300 whitespace-pre-wrap">${logText}</pre>
+                </div>
+                <div class="mt-4 flex gap-2">
+                    <button class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg" onclick="clearUploadLogs()">ล้าง Logs</button>
+                    <button class="px-4 py-2 bg-slate-600 hover:bg-slate-500 text-white rounded-lg" onclick="this.closest('.fixed').remove()">ปิด</button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(logModal);
+    } catch (error) {
+        console.error('Error showing upload logs:', error);
+        showAlert('เกิดข้อผิดพลาดในการแสดง logs', 'error');
+    }
+}
+
+// Add function to clear upload logs
+function clearUploadLogs() {
+    try {
+        sessionStorage.removeItem('uploadLogs');
+        showAlert('ล้าง logs เรียบร้อยแล้ว', 'success');
+        // Close the log modal
+        const logModal = document.querySelector('.fixed');
+        if (logModal) logModal.remove();
+    } catch (error) {
+        console.error('Error clearing upload logs:', error);
+        showAlert('เกิดข้อผิดพลาดในการล้าง logs', 'error');
+    }
+}
+
+// Add Firebase Storage validation and rules check
+async function validateFirebaseStorage() {
+    try {
+        console.log('=== Validating Firebase Storage ===');
+        
+        // Check if Firebase is available
+        if (!firebase || !firebase.apps || firebase.apps.length === 0) {
+            throw new Error('Firebase not initialized');
+        }
+        
+        // Check if Storage is available
+        if (!firebase.storage) {
+            throw new Error('Firebase Storage not available');
+        }
+        
+        // Check if user is authenticated
+        if (!auth.currentUser) {
+            throw new Error('User not authenticated');
+        }
+        
+        // Test storage access with a small test file
+        const storage = firebase.storage();
+        const testRef = storage.ref(`test/${auth.currentUser.uid}/test.txt`);
+        
+        // Try to upload a small test file
+        const testBlob = new Blob(['test'], { type: 'text/plain' });
+        const testUpload = await testRef.put(testBlob);
+        
+        // Get download URL
+        const testURL = await testUpload.snapshot.ref.getDownloadURL();
+        
+        // Clean up test file
+        await testUpload.snapshot.ref.delete();
+        
+        console.log('Firebase Storage validation successful');
+        return {
+            success: true,
+            message: 'Firebase Storage is working correctly'
+        };
+        
+    } catch (error) {
+        console.error('Firebase Storage validation failed:', error);
+        return {
+            success: false,
+            error: error.message,
+            code: error.code
+        };
+    }
+}
+
+// Add function to get storage usage information
+async function getStorageUsageInfo() {
+    try {
+        const storage = firebase.storage();
+        const userID = auth.currentUser?.uid;
+        
+        if (!userID) {
+            throw new Error('User not authenticated');
+        }
+        
+        // List files in user's evidence folder
+        const evidenceRef = storage.ref('evidence');
+        const result = await evidenceRef.listAll();
+        
+        let totalSize = 0;
+        let fileCount = 0;
+        
+        // Calculate total size of user's files
+        for (const item of result.items) {
+            if (item.fullPath.includes(userID)) {
+                const metadata = await item.getMetadata();
+                totalSize += metadata.size;
+                fileCount++;
+            }
+        }
+        
+        return {
+            totalSize,
+            fileCount,
+            totalSizeMB: (totalSize / (1024 * 1024)).toFixed(2)
+        };
+        
+    } catch (error) {
+        console.error('Error getting storage usage:', error);
+        return null;
+    }
+}
+
+// Add function to delete evidence file from Firebase Storage
+async function deleteEvidenceFromStorage(evidenceUrl, billKey) {
+    try {
+        console.log('=== Deleting evidence from Firebase Storage ===');
+        logUploadEvent('storage_delete_started', { evidenceUrl, billKey });
+        
+        if (!evidenceUrl) {
+            console.warn('No evidence URL provided for deletion');
+            return { success: false, error: 'No evidence URL provided' };
+        }
+        
+        // Extract file path from URL
+        const url = new URL(evidenceUrl);
+        const pathMatch = url.pathname.match(/\/o\/(.+?)\?/);
+        
+        if (!pathMatch) {
+            console.warn('Could not extract file path from URL:', evidenceUrl);
+            return { success: false, error: 'Invalid evidence URL format' };
+        }
+        
+        const filePath = decodeURIComponent(pathMatch[1]);
+        console.log('File path to delete:', filePath);
+        
+        // Get storage reference
+        const storage = firebase.storage();
+        const fileRef = storage.ref(filePath);
+        
+        // Delete the file
+        await fileRef.delete();
+        
+        console.log('File deleted successfully from Firebase Storage');
+        logUploadEvent('storage_delete_success', { filePath });
+        
+        return { success: true, filePath };
+        
+    } catch (error) {
+        console.error('Error deleting file from Firebase Storage:', error);
+        logUploadEvent('storage_delete_failed', { 
+            error: error.message,
+            code: error.code,
+            evidenceUrl
+        });
+        
+        return { 
+            success: false, 
+            error: error.message,
+            code: error.code
+        };
+    }
+}
+
+// Add function to get evidence file metadata
+async function getEvidenceMetadata(evidenceUrl) {
+    try {
+        if (!evidenceUrl) {
+            return null;
+        }
+        
+        // Extract file path from URL
+        const url = new URL(evidenceUrl);
+        const pathMatch = url.pathname.match(/\/o\/(.+?)\?/);
+        
+        if (!pathMatch) {
+            return null;
+        }
+        
+        const filePath = decodeURIComponent(pathMatch[1]);
+        const storage = firebase.storage();
+        const fileRef = storage.ref(filePath);
+        
+        const metadata = await fileRef.getMetadata();
+        return metadata;
+        
+    } catch (error) {
+        console.error('Error getting evidence metadata:', error);
+        return null;
+    }
 }

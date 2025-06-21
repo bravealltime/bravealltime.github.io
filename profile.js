@@ -250,7 +250,15 @@ function getRoleInfo(role) {
     }
 }
 
-function resizeImage(file, maxWidth = 400, maxHeight = 400) {
+/**
+ * Resizes an image file to the specified dimensions using a canvas.
+ * @param {File} file The image file to resize.
+ * @param {number} maxWidth The maximum width of the resized image.
+ * @param {number} maxHeight The maximum height of the resized image.
+ * @param {number} quality The quality of the output image (0 to 1).
+ * @returns {Promise<File>} A promise that resolves with the resized image file.
+ */
+function resizeImage(file, maxWidth = 400, maxHeight = 400, quality = 0.9) {
     return new Promise((resolve, reject) => {
         const img = new Image();
         img.src = URL.createObjectURL(file);
@@ -260,25 +268,32 @@ function resizeImage(file, maxWidth = 400, maxHeight = 400) {
 
             if (width > height) {
                 if (width > maxWidth) {
-                    height *= maxWidth / width;
+                    height = height * (maxWidth / width);
                     width = maxWidth;
                 }
             } else {
                 if (height > maxHeight) {
-                    width *= maxHeight / height;
+                    width = width * (maxHeight / height);
                     height = maxHeight;
                 }
             }
             canvas.width = width;
             canvas.height = height;
+
             const ctx = canvas.getContext('2d');
             ctx.drawImage(img, 0, 0, width, height);
+
             canvas.toBlob((blob) => {
-                resolve(new File([blob], file.name, {
+                if (!blob) {
+                    reject(new Error('Canvas to Blob conversion failed'));
+                    return;
+                }
+                const resizedFile = new File([blob], file.name, {
                     type: 'image/jpeg',
-                    lastModified: Date.now()
-                }));
-            }, 'image/jpeg', 0.8);
+                    lastModified: Date.now(),
+                });
+                resolve(resizedFile);
+            }, 'image/jpeg', quality);
         };
         img.onerror = (error) => reject(error);
     });

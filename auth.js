@@ -495,28 +495,54 @@ async function updateUserProfile(data) {
     await db.ref('users/' + user.uid).update(customData);
 }
 
-async function uploadProfilePhoto(file, onProgress) {
-    const user = auth.currentUser;
-    if (!user) throw new Error("ไม่พบผู้ใช้งาน");
+/**
+ * Uploads a profile photo to Firebase Storage and updates the user's profile.
+ * @param {File} file The image file to upload.
+ * @param {Function} progressCallback A function to call with upload progress (0-100).
+ * @returns {Promise<string>} A promise that resolves with the new photo URL.
+ */
+async function uploadProfilePhoto(file, progressCallback = () => {}) {
+    if (!auth.currentUser) {
+        throw new Error("ผู้ใช้ไม่ได้เข้าสู่ระบบ");
+    }
 
-    const filePath = `profile_images/${user.uid}/${Date.now()}_${file.name}`;
-    const fileRef = storage.ref(filePath);
-    
-    const uploadTask = fileRef.put(file);
+    const userId = auth.currentUser.uid;
+    const filePath = `profile-photos/${userId}/${Date.now()}_${file.name}`;
+    const storageRef = storage.ref(filePath);
 
     return new Promise((resolve, reject) => {
-        uploadTask.on('state_changed',
+        const uploadTask = storageRef.put(file);
+
+        uploadTask.on('state_changed', 
             (snapshot) => {
                 const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-                if (onProgress) onProgress(progress);
-            },
-            (error) => reject(error),
+                progressCallback(progress);
+            }, 
+            (error) => {
+                console.error("Upload failed:", error);
+                reject(error);
+            }, 
             async () => {
-                const photoURL = await uploadTask.snapshot.ref.getDownloadURL();
-                // Save URL to user's db record and auth profile
-                await user.updateProfile({ photoURL });
-                await db.ref(`users/${user.uid}`).update({ photoURL });
-                resolve(photoURL);
+                try {
+                    const downloadURL = await uploadTask.snapshot.ref.getDownloadURL();
+                    
+                    // Update Firebase Auth profile
+                    await auth.currentUser.updateProfile({ photoURL: downloadURL });
+                    
+                    // Update Realtime Database
+                    await db.ref(`users/${userId}`).update({ photoURL: downloadURL });
+
+                    // Update local cache
+                    window.auth.currentUser = auth.currentUser;
+                    if(window.auth.currentUserData) {
+                        window.auth.currentUserData.photoURL = downloadURL;
+                    }
+
+                    resolve(downloadURL);
+                } catch (error) {
+                    console.error("Error updating profile with new photo URL:", error);
+                    reject(error);
+                }
             }
         );
     });
