@@ -179,10 +179,13 @@ async function renderHistoryTable(room) {
                 <td class="py-3 px-3 text-center">${Number(bill.rate || 0).toFixed(2)}</td>
                 <td class="py-3 px-3 text-center text-green-400 font-bold">${Number(bill.total || 0).toLocaleString()}</td>
                 <td class="py-3 px-3 text-center">${Number(bill.totalAll || 0).toLocaleString()}</td>
+                <td class="py-3 px-3 text-center text-cyan-400 font-semibold">${bill.waterUnits || '-'}</td>
+                <td class="py-3 px-3 text-center">${Number(bill.waterRate || 0).toFixed(2)}</td>
+                <td class="py-3 px-3 text-center text-sky-400 font-bold">${Number(bill.waterTotal || 0).toLocaleString()}</td>
                 <td class="py-3 px-3 text-center">
                     <div class="flex items-center justify-center gap-4">
                         <button onclick='generateQRCode(${JSON.stringify(bill)})' class="text-purple-400 hover:text-purple-300 transition-colors" title="สร้าง QR Code ชำระเงิน"><i class="fas fa-qrcode"></i></button>
-                        ${bill.evidenceUrl ? 
+                        ${bill.evidenceUrl ?
                             `<a href="${bill.evidenceUrl}" target="_blank" class="text-blue-400 hover:text-blue-300 transition-colors" title="ดูหลักฐาน"><i class="fas fa-eye"></i></a>` :
                             `<button onclick="openEvidenceModal('${bill.key}')" class="text-blue-400 hover:text-blue-300 transition-colors" title="แนบหลักฐาน"><i class="fas fa-eye"></i></button>`
                         }
@@ -310,19 +313,53 @@ async function calculateBill() {
     const rate = parseFloat(document.getElementById('rate').value);
     const totalAll = parseFloat(document.getElementById('total-all').value) || 0;
 
-    // Validation
+    // Water bill fields
+    const currentWaterReading = parseFloat(document.getElementById('current-water-reading').value);
+    const previousWaterReading = parseFloat(document.getElementById('previous-water-reading').value);
+    const totalWaterUnitsHousehold = parseFloat(document.getElementById('total-water-units-household').value) || 0;
+    const totalWaterBillHousehold = parseFloat(document.getElementById('total-water-bill-household').value) || 0;
+    const waterRate = parseFloat(document.getElementById('water-rate').value);
+
+
+    // Validation for electricity
     if (!billDate || !dueDate || isNaN(currentReading) || isNaN(rate)) {
-        showAlert('กรุณากรอกข้อมูลให้ครบถ้วน: วันที่, วันครบกำหนด, เลขมิเตอร์, และเรทค่าไฟ', 'error');
+        showAlert('กรุณากรอกข้อมูลค่าไฟให้ครบถ้วน: วันที่, วันครบกำหนด, เลขมิเตอร์, และเรทค่าไฟ', 'error');
         return;
     }
     if (currentReading < previousReading) {
-        showAlert('ค่ามิเตอร์ปัจจุบันต้องไม่น้อยกว่าครั้งที่แล้ว', 'error');
+        showAlert('ค่ามิเตอร์ไฟฟ้าปัจจุบันต้องไม่น้อยกว่าครั้งที่แล้ว', 'error');
         return;
     }
 
-    // Calculation
+    // Validation for water (only if any water field is entered)
+    const waterFieldsEntered = !isNaN(currentWaterReading) || !isNaN(previousWaterReading) || !isNaN(totalWaterUnitsHousehold) || !isNaN(totalWaterBillHousehold) || !isNaN(waterRate);
+    if (waterFieldsEntered) {
+        if (isNaN(currentWaterReading) || isNaN(waterRate)) {
+            showAlert('กรุณากรอกข้อมูลค่าน้ำให้ครบถ้วน: เลขมิเตอร์น้ำปัจจุบัน และ ค่าน้ำ/หน่วย', 'error');
+            return;
+        }
+        if (currentWaterReading < previousWaterReading) {
+            showAlert('ค่ามิเตอร์น้ำปัจจุบันต้องไม่น้อยกว่าครั้งที่แล้ว', 'error');
+            return;
+        }
+    }
+
+    // Electricity Calculation
     const units = currentReading - previousReading;
     const total = units * rate;
+
+    // Water Calculation
+    let waterUnits = 0;
+    let waterTotal = 0;
+    if (waterFieldsEntered && !isNaN(currentWaterReading) && !isNaN(previousWaterReading) && !isNaN(waterRate)) {
+        waterUnits = currentWaterReading - previousWaterReading;
+        waterTotal = waterUnits * waterRate;
+    } else if (waterFieldsEntered && !isNaN(currentWaterReading) && isNaN(previousWaterReading) && !isNaN(waterRate) ) {
+        // Case where previous water reading might be 0 or not yet set for the first bill
+         waterUnits = currentWaterReading - 0; // Assume previous is 0 if not available but current and rate are
+         waterTotal = waterUnits * waterRate;
+    }
+
 
     // Find the associated room name
     const bills = await loadFromFirebase();
@@ -333,15 +370,24 @@ async function calculateBill() {
         room: room,
         name: roomName,
         date: billDate,
-        dueDate: dueDate, // New field
+        dueDate: dueDate,
         current: currentReading,
         previous: previousReading,
         units: units,
         rate: rate,
         total: total,
         totalAll: totalAll,
+        // Water data
+        currentWater: currentWaterReading || 0,
+        previousWater: previousWaterReading || 0,
+        waterUnits: waterUnits || 0,
+        waterRate: waterRate || 0,
+        waterTotal: waterTotal || 0,
+        totalWaterBillHousehold: totalWaterBillHousehold || 0,
+        totalWaterUnitsHousehold: totalWaterUnitsHousehold || 0,
+
         createdAt: new Date().toISOString(),
-        paid: false // Add payment status
+        paid: false
     };
 
     // Save to Firebase
@@ -366,24 +412,25 @@ async function openEditModal(key) {
     if (billToEdit) {
         document.getElementById('edit-key').value = key;
         document.getElementById('edit-date').value = billToEdit.date;
-        document.getElementById('edit-due-date').value = billToEdit.dueDate || ''; // New
+        document.getElementById('edit-due-date').value = billToEdit.dueDate || '';
         document.getElementById('edit-current').value = billToEdit.current;
         document.getElementById('edit-previous').value = billToEdit.previous;
         document.getElementById('edit-total-all').value = billToEdit.totalAll || 0;
         
-        // Recalculate rate for display
-        const units = billToEdit.current - billToEdit.previous;
-        const rateInput = document.getElementById('edit-rate');
-        if (units > 0 && billToEdit.totalAll > 0) {
-             const rate = billToEdit.totalAll / units; // This seems to be total units of house, not room
-             // Let's re-evaluate how rate is calculated and stored. For now, just use stored rate.
-             rateInput.value = billToEdit.rate.toFixed(4);
-        } else if (billToEdit.rate) {
-            rateInput.value = billToEdit.rate.toFixed(4);
-        }
-        else {
-             rateInput.value = 0;
-        }
+        const editRateInput = document.getElementById('edit-rate');
+        editRateInput.value = (billToEdit.rate || 0).toFixed(4);
+
+        // Populate water fields if they exist in the modal and billToEdit
+        const editCurrentWater = document.getElementById('edit-current-water');
+        const editPreviousWater = document.getElementById('edit-previous-water');
+        const editTotalWaterBillHousehold = document.getElementById('edit-total-water-bill-household');
+        const editWaterRate = document.getElementById('edit-water-rate');
+
+        if (editCurrentWater) editCurrentWater.value = billToEdit.currentWater || '';
+        if (editPreviousWater) editPreviousWater.value = billToEdit.previousWater || '';
+        if (editTotalWaterBillHousehold) editTotalWaterBillHousehold.value = billToEdit.totalWaterBillHousehold || '';
+        if (editWaterRate) editWaterRate.value = (billToEdit.waterRate || 0).toFixed(4);
+
 
         document.getElementById('edit-modal').classList.remove('hidden');
         document.getElementById('edit-modal').classList.add('flex');
@@ -401,41 +448,83 @@ async function saveEdit() {
     const current = parseFloat(document.getElementById('edit-current').value);
     const previous = parseFloat(document.getElementById('edit-previous').value);
     const totalAll = parseFloat(document.getElementById('edit-total-all').value);
+    // Retrieve original rate for electricity from the hidden (or readonly) input
+    const electricRate = parseFloat(document.getElementById('edit-rate').value);
+
+
+    // Water fields from edit modal
+    const currentWater = parseFloat(document.getElementById('edit-current-water').value) || 0;
+    const previousWater = parseFloat(document.getElementById('edit-previous-water').value) || 0;
+    const totalWaterBillHousehold = parseFloat(document.getElementById('edit-total-water-bill-household').value) || 0;
+    // Retrieve original water rate
+    const waterRate = parseFloat(document.getElementById('edit-water-rate').value) || 0;
+
 
      // Validation
-    if (!date || !dueDate || isNaN(current) || isNaN(previous)) {
-        showAlert('กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน', 'error');
+    if (!date || !dueDate || isNaN(current) || isNaN(previous) || isNaN(electricRate)) {
+        showAlert('กรุณากรอกข้อมูลไฟฟ้าที่จำเป็นให้ครบถ้วน (วันที่, ครบกำหนด, มิเตอร์ปัจจุบัน/ก่อน, เรท)', 'error');
         return;
     }
+    if (current < previous) {
+        showAlert('ค่ามิเตอร์ไฟฟ้าปัจจุบันต้องไม่น้อยกว่าครั้งที่แล้ว', 'error');
+        return;
+    }
+
+    const waterFieldsExistInModal = document.getElementById('edit-current-water');
+    if (waterFieldsExistInModal) { // Check if water fields are part of the modal
+        if ( (currentWater || previousWater || totalWaterBillHousehold) && (isNaN(currentWater) || isNaN(waterRate)) ) {
+             showAlert('หากมีการกรอกข้อมูลน้ำ กรุณากรอกเลขมิเตอร์น้ำปัจจุบัน และเรทค่าน้ำให้ถูกต้อง', 'error');
+             return;
+        }
+        if (currentWater < previousWater) {
+            showAlert('ค่ามิเตอร์น้ำปัจจุบันต้องไม่น้อยกว่าครั้งที่แล้ว', 'error');
+            return;
+        }
+    }
+
 
     // Keep original room and name
     const bills = await loadFromFirebase();
     const originalBill = bills.find(b => b.key === key);
     
-    // Recalculate units and total
+    // Recalculate electricity units and total
     const units = current - previous;
-    let rate = originalBill.rate; // Keep original rate unless totalAll changes
-    if(totalAll && totalAll !== originalBill.totalAll) {
-        // Here we need total units of the house for that period to recalculate the rate.
-        // This is complex. For now, let's assume rate is manually managed or doesn't change on edit.
-        // A better approach would be to store house total units and bill in a separate record.
-        // For now, if totalAll changes, we can't accurately get the new rate.
-        // Let's just recalculate the total for this room based on the original rate.
+    const total = units * electricRate; // Use the rate from the form (should be original or correctly calculated)
+
+    // Recalculate water units and total
+    let waterUnits = 0;
+    let waterTotal = 0;
+    if (waterFieldsExistInModal && !isNaN(currentWater) && !isNaN(previousWater) && !isNaN(waterRate)) {
+        waterUnits = currentWater - previousWater;
+        waterTotal = waterUnits * waterRate;
+    } else if (waterFieldsExistInModal && !isNaN(currentWater) && isNaN(previousWater) && !isNaN(waterRate)) {
+        waterUnits = currentWater - 0;
+        waterTotal = waterUnits * waterRate;
     }
-    const total = units * rate;
 
 
     const updatedData = {
         date: date,
-        dueDate: dueDate, // New
+        dueDate: dueDate,
         current: current,
         previous: previous,
-        totalAll: totalAll,
+        totalAll: totalAll, // Total electricity bill for household
         units: units,
-        total: total,
-        rate: rate, // Keep rate
+        total: total,       // Room electricity bill
+        rate: electricRate, // Electricity rate
         room: originalBill.room,
-        name: originalBill.name
+        name: originalBill.name,
+
+        // Water data
+        currentWater: currentWater || 0,
+        previousWater: previousWater || 0,
+        waterUnits: waterUnits || 0,
+        waterRate: waterRate || 0,
+        waterTotal: waterTotal || 0,
+        totalWaterBillHousehold: totalWaterBillHousehold || 0,
+        // totalWaterUnitsHousehold is not directly edited here, it's for rate calculation
+        // If it needs to be stored/edited, add a field in the modal.
+        // For now, assume it's mainly used for initial rate calculation.
     };
 
     try {
@@ -524,6 +613,23 @@ async function updatePreviousReadingFromDB(room) {
     const previousReadingInput = document.getElementById('previous-reading');
     if (previousReadingInput) {
         previousReadingInput.value = bills.length > 0 ? bills[0].current : '';
+    }
+    const previousWaterReadingInput = document.getElementById('previous-water-reading');
+    if (previousWaterReadingInput) {
+        previousWaterReadingInput.value = bills.length > 0 && bills[0].currentWater ? bills[0].currentWater : '';
+    }
+}
+
+function calculateWaterRatePerUnit() {
+    const totalWaterUnits = parseFloat(document.getElementById('total-water-units-household').value);
+    const totalWaterBill = parseFloat(document.getElementById('total-water-bill-household').value);
+    const waterRateInput = document.getElementById('water-rate');
+
+    if(totalWaterUnits > 0 && totalWaterBill > 0) {
+        const rate = totalWaterBill / totalWaterUnits;
+        waterRateInput.value = rate.toFixed(4);
+    } else {
+        waterRateInput.value = 0;
     }
 }
 
@@ -770,9 +876,12 @@ function generateQRCode(record) {
         return;
     }
 
-    const promptPayId = '1209701792030'
-    const amount = parseFloat(record.total);
-    const canGenerateQR = !isNaN(amount) && amount > 0;
+    const promptPayId = '1209701792030' // Consider making this configurable
+    const electricAmount = parseFloat(record.total) || 0;
+    const waterAmount = parseFloat(record.waterTotal) || 0;
+    const totalAmount = electricAmount + waterAmount;
+
+    const canGenerateQR = !isNaN(totalAmount) && totalAmount > 0;
     let qrCodeImage = '';
     let qrCodeCaption = '';
     const receiptBgColor = '#1e293b'; // Corresponds to bg-slate-800
@@ -780,18 +889,17 @@ function generateQRCode(record) {
     try {
         if (canGenerateQR) {
             // 1. Generate QR Code payload and image tag
-            const payload = window.ThaiQRCode.generatePayload(promptPayId, { amount });
+            const payload = window.ThaiQRCode.generatePayload(promptPayId, { amount: totalAmount });
             const qr = qrcode(0, 'M');
             qr.addData(payload);
             qr.make();
-            // The QR code library generates an img tag with inline styles. We'll wrap it for centering.
             qrCodeImage = `<div class="bg-white p-2 rounded-lg inline-block">${qr.createImgTag(5, 4)}</div>`;
-            qrCodeCaption = `<p class="text-sm font-semibold text-slate-400 mt-2">สแกนเพื่อชำระเงินค่าไฟ</p>`;
+            qrCodeCaption = `<p class="text-sm font-semibold text-slate-400 mt-2">สแกนเพื่อชำระเงินรวม (ค่าไฟ + ค่าน้ำ)</p>`;
         } else {
             qrCodeImage = `
                 <div class="bg-red-900/50 border border-red-700 text-red-300 px-4 py-3 rounded-lg" role="alert">
                     <p class="font-bold">ไม่สามารถสร้าง QR Code ได้</p>
-                    <p>เนื่องจากยอดชำระไม่ถูกต้อง (฿${(record.total || 0).toFixed(2)})</p>
+                    <p>เนื่องจากยอดชำระรวมไม่ถูกต้อง (฿${totalAmount.toFixed(2)})</p>
                 </div>`;
             qrCodeCaption = '';
         }
@@ -806,14 +914,15 @@ function generateQRCode(record) {
         const monthName = !isNaN(billDate.getTime()) ? thaiMonths[billDate.getMonth()] : "";
         const year = !isNaN(billDate.getTime()) ? billDate.getFullYear() + 543 : "";
 
-        const summaryText = `ค่าไฟห้อง ${record.room} (${record.name || ''}) ประจำเดือน ${monthName} ${year}`;
+        const summaryText = `ค่าบริการห้อง ${record.room} (${record.name || ''}) ประจำเดือน ${monthName} ${year}`;
+        const hasWaterBill = (record.waterTotal && parseFloat(record.waterTotal) > 0);
 
         // 3. Build the receipt HTML
         const receiptContainer = document.getElementById('receipt-container');
         receiptContainer.innerHTML = `
             <div id="receipt-content" class="bg-white text-gray-800 rounded-lg p-6 shadow-lg" style="font-family: 'Kanit', sans-serif; max-width: 400px; margin: auto;">
                 <div class="text-center mb-6">
-                    <h3 class="text-xl font-bold text-gray-900">ใบแจ้งค่าไฟฟ้า</h3>
+                    <h3 class="text-xl font-bold text-gray-900">ใบแจ้งค่าบริการ</h3>
                     <p class="text-gray-500 text-sm">${summaryText}</p>
                 </div>
 
@@ -821,30 +930,67 @@ function generateQRCode(record) {
                     <p class="text-sm text-gray-600">ห้อง</p>
                     <p class="text-2xl font-bold text-indigo-600">${record.room} - ${record.name || 'ไม่มีชื่อ'}</p>
                      <p class="text-sm text-gray-500 mt-2">วันที่จด: ${displayDate}</p>
+                     ${record.dueDate ? `<p class="text-sm text-gray-500">ครบกำหนดชำระ: ${record.dueDate}</p>` : ''}
                 </div>
                 
-                <div class="border-t border-gray-200 pt-4 mt-4 space-y-2 text-sm">
-                    <div class="flex justify-between">
-                        <span class="text-gray-600">ค่ามิเตอร์ปัจจุบัน:</span>
-                        <span class="font-mono font-medium">${record.current} หน่วย</span>
-                    </div>
-                    <div class="flex justify-between">
-                        <span class="text-gray-600">ค่ามิเตอร์ครั้งที่แล้ว:</span>
-                        <span class="font-mono font-medium">${record.previous} หน่วย</span>
-                    </div>
-                     <div class="flex justify-between font-semibold text-base pt-1">
-                        <span class="text-gray-700">จำนวนหน่วยที่ใช้:</span>
-                        <span class="font-mono text-indigo-600">${record.units} หน่วย</span>
-                    </div>
-                    <div class="flex justify-between">
-                        <span class="text-gray-600">อัตราค่าไฟต่อหน่วย:</span>
-                        <span class="font-mono font-medium">${parseFloat(record.rate).toFixed(2)} บาท</span>
+                <!-- Electricity Details -->
+                <div class="border-t border-gray-200 pt-4 mt-4">
+                    <h4 class="font-semibold text-gray-700 mb-2">รายละเอียดค่าไฟฟ้า</h4>
+                    <div class="space-y-1 text-sm">
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">ค่ามิเตอร์ปัจจุบัน:</span>
+                            <span class="font-mono font-medium">${record.current} หน่วย</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">ค่ามิเตอร์ครั้งที่แล้ว:</span>
+                            <span class="font-mono font-medium">${record.previous} หน่วย</span>
+                        </div>
+                         <div class="flex justify-between font-semibold">
+                            <span class="text-gray-700">จำนวนหน่วยไฟฟ้าที่ใช้:</span>
+                            <span class="font-mono text-indigo-600">${record.units} หน่วย</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">อัตราค่าไฟต่อหน่วย:</span>
+                            <span class="font-mono font-medium">${parseFloat(record.rate || 0).toFixed(2)} บาท</span>
+                        </div>
+                        <div class="flex justify-between font-bold text-base pt-1">
+                            <span class="text-gray-800">รวมค่าไฟฟ้า:</span>
+                            <span class="font-mono text-indigo-700">฿${electricAmount.toFixed(2)}</span>
+                        </div>
                     </div>
                 </div>
 
+                <!-- Water Details (Conditional) -->
+                ${hasWaterBill ? `
+                <div class="border-t border-gray-200 pt-4 mt-4">
+                    <h4 class="font-semibold text-gray-700 mb-2">รายละเอียดค่าน้ำ</h4>
+                    <div class="space-y-1 text-sm">
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">ค่ามิเตอร์น้ำปัจจุบัน:</span>
+                            <span class="font-mono font-medium">${record.currentWater || 0} หน่วย</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">ค่ามิเตอร์น้ำครั้งที่แล้ว:</span>
+                            <span class="font-mono font-medium">${record.previousWater || 0} หน่วย</span>
+                        </div>
+                         <div class="flex justify-between font-semibold">
+                            <span class="text-gray-700">จำนวนหน่วยน้ำที่ใช้:</span>
+                            <span class="font-mono text-indigo-600">${record.waterUnits || 0} หน่วย</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">อัตราค่าน้ำต่อหน่วย:</span>
+                            <span class="font-mono font-medium">${parseFloat(record.waterRate || 0).toFixed(2)} บาท</span>
+                        </div>
+                        <div class="flex justify-between font-bold text-base pt-1">
+                            <span class="text-gray-800">รวมค่าน้ำ:</span>
+                            <span class="font-mono text-indigo-700">฿${waterAmount.toFixed(2)}</span>
+                        </div>
+                    </div>
+                </div>` : ''}
+
                 <div class="bg-indigo-50 rounded-lg p-4 mt-6 text-center">
                     <p class="text-sm font-semibold text-indigo-800">ยอดชำระทั้งหมด</p>
-                    <h2 class="text-4xl font-bold text-indigo-900 tracking-tight my-1">฿${parseFloat(record.total).toFixed(2)}</h2>
+                    <h2 class="text-4xl font-bold text-indigo-900 tracking-tight my-1">฿${totalAmount.toFixed(2)}</h2>
                 </div>
 
                 <div class="flex flex-col items-center justify-center mt-6">
