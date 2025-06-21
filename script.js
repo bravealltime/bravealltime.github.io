@@ -804,57 +804,56 @@ function generateQRCode(record) {
         
         const displayDate = !isNaN(billDate.getTime()) ? `${dateParts[0]}/${dateParts[1]}/${parseInt(dateParts[2])}` : "ข้อมูลวันที่ไม่ถูกต้อง";
         const monthName = !isNaN(billDate.getTime()) ? thaiMonths[billDate.getMonth()] : "";
-        const year = !isNaN(billDate.getTime()) ? billDate.getFullYear() : "";
+        const year = !isNaN(billDate.getTime()) ? billDate.getFullYear() + 543 : "";
 
-        const subtitle = `ค่าไฟห้อง ${record.room} (${record.name || ''}) ประจำเดือน ${monthName} ${year}`;
-        const qrCaptionText = `สแกนเพื่อชำระเงินค่าไฟ`;
-        const footerText = `กรุณาชำระเงินภายในวันที่กำหนด`;
+        const summaryText = `ค่าไฟห้อง ${record.room} (${record.name || ''}) ประจำเดือน ${monthName} ${year}`;
 
         // 3. Build the receipt HTML
         const receiptContainer = document.getElementById('receipt-container');
         receiptContainer.innerHTML = `
-            <div id="receipt-content" class="bg-white text-gray-800 p-8" style="font-family: 'Kanit', sans-serif; width: 380px; margin: auto;">
-                <div class="text-center">
-                    <h3 class="text-2xl font-bold text-gray-900">ใบแจ้งค่าไฟฟ้า</h3>
-                    <p class="text-gray-500 text-sm mt-1">${subtitle}</p>
+            <div id="receipt-content" class="bg-white text-gray-800 rounded-lg p-6 shadow-lg" style="font-family: 'Kanit', sans-serif; max-width: 400px; margin: auto;">
+                <div class="text-center mb-6">
+                    <h3 class="text-xl font-bold text-gray-900">ใบแจ้งค่าไฟฟ้า</h3>
+                    <p class="text-gray-500 text-sm">${summaryText}</p>
                 </div>
 
-                <div class="bg-gray-50 rounded-xl p-4 mt-6 text-center">
+                <div class="bg-gray-50 rounded-lg p-4 mb-4">
                     <p class="text-sm text-gray-600">ห้อง</p>
-                    <p class="text-3xl font-bold" style="color: #4f46e5;">${record.room} - ${record.name || 'ไม่มีชื่อ'}</p>
-                    <p class="text-base text-gray-500 mt-1">วันที่จด: ${displayDate}</p>
+                    <p class="text-2xl font-bold text-indigo-600">${record.room} - ${record.name || 'ไม่มีชื่อ'}</p>
+                     <p class="text-sm text-gray-500 mt-2">วันที่จด: ${displayDate}</p>
                 </div>
                 
-                <div class="mt-6 space-y-3 text-sm">
-                    <div class="flex">
-                        <span class="text-gray-600" style="width: 150px;">ค่ามิเตอร์ปัจจุบัน:</span>
-                        <span class="font-mono font-medium text-right flex-1">${record.current} หน่วย</span>
+                <div class="border-t border-gray-200 pt-4 mt-4 space-y-2 text-sm">
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">ค่ามิเตอร์ปัจจุบัน:</span>
+                        <span class="font-mono font-medium">${record.current} หน่วย</span>
                     </div>
-                    <div class="flex">
-                        <span class="text-gray-600" style="width: 150px;">ค่ามิเตอร์ครั้งที่แล้ว:</span>
-                        <span class="font-mono font-medium text-right flex-1">${record.previous} หน่วย</span>
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">ค่ามิเตอร์ครั้งที่แล้ว:</span>
+                        <span class="font-mono font-medium">${record.previous} หน่วย</span>
                     </div>
-                    <div class="flex font-bold text-base items-center">
-                        <span class="text-gray-800" style="width: 150px;">จำนวนหน่วยที่ใช้:</span>
-                        <span class="font-mono text-indigo-600 text-right flex-1">${record.units} หน่วย</span>
+                     <div class="flex justify-between font-semibold text-base pt-1">
+                        <span class="text-gray-700">จำนวนหน่วยที่ใช้:</span>
+                        <span class="font-mono text-indigo-600">${record.units} หน่วย</span>
                     </div>
-                    <div class="flex">
-                        <span class="text-gray-600" style="width: 150px;">อัตราค่าไฟต่อหน่วย:</span>
-                        <span class="font-mono font-medium text-right flex-1">${parseFloat(record.rate).toFixed(2)} บาท</span>
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">อัตราค่าไฟต่อหน่วย:</span>
+                        <span class="font-mono font-medium">${parseFloat(record.rate).toFixed(2)} บาท</span>
                     </div>
                 </div>
 
-                <div class="bg-indigo-50 rounded-xl p-4 mt-6 text-center">
-                    <p class="text-base font-semibold text-indigo-800">ยอดชำระทั้งหมด</p>
-                    <h2 class="text-4xl font-bold tracking-tight my-1" style="color: #312e81;">฿${parseFloat(record.total).toFixed(2)}</h2>
+                <div class="bg-indigo-50 rounded-lg p-4 mt-6 text-center">
+                    <p class="text-sm font-semibold text-indigo-800">ยอดชำระทั้งหมด</p>
+                    <h2 class="text-4xl font-bold text-indigo-900 tracking-tight my-1">฿${parseFloat(record.total).toFixed(2)}</h2>
                 </div>
 
                 <div class="flex flex-col items-center justify-center mt-6">
-                    ${canGenerateQR ? `<div class="p-2 bg-white">${qr.createImgTag(6, 8)}</div><p class="text-sm font-semibold text-gray-700 mt-2">${qrCaptionText}</p>` : qrCodeImage}
+                    ${qrCodeImage}
+                    ${qrCodeCaption}
                 </div>
 
-                 <div class="text-xs text-gray-500 mt-6 text-center border-t border-gray-200 pt-3">
-                    <p>${footerText}</p>
+                 <div class="text-xs text-gray-400 mt-6 text-center border-t border-gray-200 pt-2">
+                    <p>กรุณาชำระเงินภายในวันที่กำหนด</p>
                 </div>
             </div>
         `;
@@ -869,7 +868,7 @@ function generateQRCode(record) {
             if (window.html2canvas) {
                 html2canvas(receiptElement, { 
                     scale: 3, 
-                    backgroundColor: '#ffffff',
+                    backgroundColor: canvasBgColor,
                     useCORS: true
                 }).then(canvas => {
                     const link = document.createElement('a');
