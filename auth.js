@@ -2,12 +2,13 @@
 let currentUser = null;
 let userRole = 'user'; // default role
 
-// Role hierarchy: admin > user > 1 > 2
+// Role hierarchy: admin > user > 1 (Owner) > level1_tenant > 2
 const ROLE_HIERARCHY = {
-    'admin': 4,
-    'user': 3,
-    '1': 2,
-    '2': 1
+    'admin': 5,
+    'user': 4,
+    '1': 3, // Level 1 Owner
+    'level1_tenant': 2, // Level 1 Tenant (ลูกบ้าน)
+    '2': 1 // Level 2 (อาจจะไม่ใช้แล้ว หรือมีความหมายอื่น)
 };
 
 // Role permissions
@@ -22,9 +23,49 @@ const ROLE_PERMISSIONS = {
         canViewReports: true,
         canAddNewBills: true,
         canGenerateQRCode: true,
-        canViewHistory: true
+        canViewHistory: true,
+        canManageTenants: true, // Admin can manage tenants for level1 users
     },
-    'user': {
+    'user': { // General user, might not have access to specific room data unless explicitly granted
+        canManageUsers: false,
+        canManageRoles: false,
+        canViewAllRooms: false, // Or based on specific grants
+        canEditAllBills: false,
+        canDeleteBills: false,
+        canUploadEvidence: false, // Or based on specific grants
+        canViewReports: false,
+        canAddNewBills: false,
+        canGenerateQRCode: true, // Can generate for their own bills if any
+        canViewHistory: true, // Can view their own history if any
+        canManageTenants: false,
+    },
+    '1': { // Level 1 Owner (เจ้าของห้อง)
+        canManageUsers: false, // Cannot manage general users, but can manage their tenants
+        canManageRoles: false,
+        canViewAllRooms: false, // Should only see their managed rooms
+        canEditAllBills: false, // Should only edit bills for their managed rooms
+        canDeleteBills: false, // Should only delete bills for their managed rooms
+        canUploadEvidence: true, // For their managed rooms
+        canViewReports: false, // Or specific reports for their rooms
+        canAddNewBills: true, // For their managed rooms
+        canGenerateQRCode: true, // For their managed rooms
+        canViewHistory: true, // For their managed rooms
+        canManageTenants: true, // Key permission for Level 1 Owner
+    },
+    'level1_tenant': { // ลูกบ้าน
+        canManageUsers: false,
+        canManageRoles: false,
+        canViewAllRooms: false, // Only accessible rooms
+        canEditAllBills: false, // No editing
+        canDeleteBills: false, // No deleting
+        canUploadEvidence: true, // For their accessible rooms
+        canViewReports: false,
+        canAddNewBills: false,
+        canGenerateQRCode: true, // For their accessible rooms' bills
+        canViewHistory: true, // For their accessible rooms
+        canManageTenants: false,
+    },
+    '2': { // Level 2 (อาจจะยังคงเดิมหรือปรับเปลี่ยนตามความเหมาะสม)
         canManageUsers: false,
         canManageRoles: false,
         canViewAllRooms: false,
@@ -33,32 +74,9 @@ const ROLE_PERMISSIONS = {
         canUploadEvidence: false,
         canViewReports: false,
         canAddNewBills: false,
-        canGenerateQRCode: true,
-        canViewHistory: true
-    },
-    '1': {
-        canManageUsers: false,
-        canManageRoles: false,
-        canViewAllRooms: false,
-        canEditAllBills: false,
-        canDeleteBills: false,
-        canUploadEvidence: false,
-        canViewReports: false,
-        canAddNewBills: false,
-        canGenerateQRCode: true,
-        canViewHistory: true
-    },
-    '2': {
-        canManageUsers: false,
-        canManageRoles: false,
-        canViewAllRooms: false,
-        canEditAllBills: false,
-        canDeleteBills: false,
-        canUploadEvidence: false,
-        canViewReports: false,
-        canAddNewBills: false,
-        canGenerateQRCode: true,
-        canViewHistory: true
+        canGenerateQRCode: true, // Potentially for specific cases
+        canViewHistory: true,  // Potentially for specific cases
+        canManageTenants: false,
     }
 };
 
@@ -123,8 +141,9 @@ async function getUserData(uid) {
 }
 
 // Check if user has permission
-function hasPermission(permission) {
+function hasPermission(permission, roomToCheck = null) {
     const userRole = window.currentUserRole;
+    const currentUserData = window.currentUserData || (window.currentUser ? window.currentUser.dbData : {}); // Ensure currentUserData is available
 
     // Admin role has all permissions unconditionally.
     if (userRole === 'admin') {
@@ -132,11 +151,59 @@ function hasPermission(permission) {
     }
 
     if (!userRole || !ROLE_PERMISSIONS[userRole]) {
+        return false; // Role not defined or no permissions for role
+    }
+
+    // Basic permission check based on role
+    const hasBasicPermission = !!ROLE_PERMISSIONS[userRole][permission];
+    if (!hasBasicPermission) {
         return false;
     }
 
-    return !!ROLE_PERMISSIONS[userRole][permission];
+    // Role-specific logic for room access
+    if (roomToCheck) {
+        if (userRole === '1') { // Level 1 Owner
+            // Check if the room is one of their managed rooms
+            const managedRooms = currentUserData.managedRooms || [];
+            if (!managedRooms.includes(roomToCheck)) {
+                // If permission is to view history or QR, also check tenant accessible rooms
+                if (permission === 'canViewHistory' || permission === 'canGenerateQRCode') {
+                    // This part is complex as it requires fetching all tenants and their rooms.
+                    // For now, let's assume Level 1 can see history/QR of their own managed rooms.
+                    // A more advanced check would iterate through their tenants' accessibleRooms.
+                    return false;
+                } else if (permission !== 'canManageTenants') { // Owners can always manage tenants
+                     return false;
+                }
+            }
+        } else if (userRole === 'level1_tenant') { // Level 1 Tenant
+            // Check if the room is one of their accessible rooms
+            const accessibleRooms = currentUserData.accessibleRooms || [];
+            if (!accessibleRooms.includes(roomToCheck)) {
+                return false;
+            }
+            // Tenants have limited write access, e.g., cannot edit bills but can upload evidence
+            if (permission === 'canEditAllBills' || permission === 'canDeleteBills' || permission === 'canAddNewBills') {
+                return false; // Tenants generally don't have these rights even for accessible rooms
+            }
+        }
+        // For 'user' or '2', if they have basic permission, roomToCheck logic might depend on other criteria
+        // (e.g. if a 'user' is assigned to a specific room through another mechanism).
+        // For now, if basic permission exists and it's not L1 or L1_Tenant, we assume access if roomToCheck is involved.
+    } else {
+        // If no roomToCheck, and it's a permission that implies viewing multiple rooms
+        if (userRole === '1' || userRole === 'level1_tenant') {
+            if (permission === 'canViewAllRooms' || permission === 'canEditAllBills' || permission === 'canDeleteBills') {
+                 // These roles should not have "AllRooms" access unless specifically viewing their own/allowed list.
+                 // This prevents them from seeing the "All Rooms" view on the home page if not intended.
+                return false;
+            }
+        }
+    }
+
+    return true; // If all checks pass
 }
+
 
 // Redirect to login if not authenticated
 function requireAuth() {
@@ -471,17 +538,18 @@ document.addEventListener('DOMContentLoaded', async function() {
         if (user) {
             const userData = await getUserData(user.uid);
             window.currentUserRole = user.role; // Set global role for hasPermission()
+            window.currentUserData = userData; // Make full user data from DB globally available for permissions
             
-            // This is for profile.js
+            // This is for profile.js and other modules needing auth functions
             window.auth = {
-                currentUser: user,
-                userData: userData,
+                currentUser: user, // Firebase auth user object + merged DB data
+                userData: userData, // Specific DB data for the user
                 updateUserProfile: updateUserProfile,
                 updateUserPassword: updateUserPassword,
                 uploadProfilePhoto: uploadProfilePhoto,
             };
 
-            updateAuthUI(user);
+            updateAuthUI(user); // user here is the merged object from checkAuth()
             
             if(typeof initializePageContent === 'function') {
                 initializePageContent();

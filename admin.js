@@ -182,8 +182,9 @@ function getRoleIcon(role) {
     switch (role) {
         case 'admin': return '<i class="fas fa-crown"></i>';
         case 'user': return '<i class="fas fa-user"></i>';
-        case '1': return '<i class="fas fa-user-tie"></i>';
-        case '2': return '<i class="fas fa-user"></i>';
+        case '1': return '<i class="fas fa-user-tie"></i>'; // Owner
+        case 'level1_tenant': return '<i class="fas fa-house-user"></i>'; // Tenant
+        case '2': return '<i class="fas fa-user-cog"></i>'; // Level 2 - perhaps a different icon
         default: return '<i class="fas fa-user"></i>';
     }
 }
@@ -193,8 +194,9 @@ function getRoleColor(role) {
     switch (role) {
         case 'admin': return 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30';
         case 'user': return 'bg-blue-500/20 text-blue-400 border border-blue-500/30';
-        case '1': return 'bg-green-500/20 text-green-400 border border-green-500/30';
-        case '2': return 'bg-gray-500/20 text-gray-400 border border-gray-500/30';
+        case '1': return 'bg-green-500/20 text-green-400 border border-green-500/30'; // Owner
+        case 'level1_tenant': return 'bg-teal-500/20 text-teal-400 border border-teal-500/30'; // Tenant
+        case '2': return 'bg-purple-500/20 text-purple-400 border border-purple-500/30'; // Level 2
         default: return 'bg-gray-500/20 text-gray-400 border border-gray-500/30';
     }
 }
@@ -204,7 +206,8 @@ function getRoleText(role) {
     switch (role) {
         case 'admin': return 'ผู้ดูแลระบบ';
         case 'user': return 'ผู้ใช้งานทั่วไป';
-        case '1': return 'ระดับ 1';
+        case '1': return 'ระดับ 1 (เจ้าของห้อง)';
+        case 'level1_tenant': return 'ระดับ 1 (ลูกบ้าน)';
         case '2': return 'ระดับ 2';
         default: return 'ไม่ระบุ';
     }
@@ -247,15 +250,25 @@ async function addUser(name, email, password, role, status = 'active') {
         const userCredential = await auth.createUserWithEmailAndPassword(email, password);
         const user = userCredential.user;
         
-        // Save user data to database
-        await db.ref(`users/${user.uid}`).set({
+        let userData = {
             name: name,
             email: email,
             role: role,
             status: status,
             createdAt: new Date().toISOString(),
             profileImage: null
-        });
+        };
+
+        // Initialize fields for level1 or level1_tenant if necessary
+        if (role === '1') { // Level 1 Owner
+            userData.managedRooms = [];
+        } else if (role === 'level1_tenant') { // Level 1 Tenant
+            userData.accessibleRooms = [];
+            userData.ownerUid = null; // This should be set by the Level 1 owner later
+        }
+
+        // Save user data to database
+        await db.ref(`users/${user.uid}`).set(userData);
         
         showAlert('เพิ่มผู้ใช้สำเร็จ!', 'success');
         loadUsers();

@@ -17,14 +17,20 @@ document.addEventListener('DOMContentLoaded', async function() {
     // This check is for all pages that require authentication
     // Add the 'requires-auth' class to the body tag of pages that need it.
     if (document.body.classList.contains('requires-auth')) {
-        const isAuthenticated = await checkAuth();
-        if (!isAuthenticated) {
+        // checkAuth() now resolves with the user object or null
+        const user = await checkAuth(); // from auth.js
+        if (!user) {
             window.location.href = 'login.html';
             return;
         }
         
+        // Set global user variables (already done in auth.js, but ensure consistency)
+        window.currentUser = user;
+        window.currentUserRole = user.role;
+        // window.currentUserData is also set in auth.js after getUserData
+
         // Update UI elements like navbar, user profile icon etc.
-        updateAuthUI();
+        updateAuthUI(user); // Pass the user object to updateAuthUI
 
         // Load page-specific data after authentication is confirmed
         initializePageContent();
@@ -33,10 +39,29 @@ document.addEventListener('DOMContentLoaded', async function() {
 
 function initializePageContent() {
     // Route to the correct function based on the current page
-    if (document.getElementById('home-room-cards')) {
-        renderHomeRoomCards();
+    if (document.getElementById('home-room-cards') || document.getElementById('level1-owner-tabs-container')) { // Check for L1 tabs too
+        renderHomeRoomCards(); // This will now use global currentUser, currentUserRole, currentUserData
         
-        // Add event listeners for the 'Add Room' modal - only for admin
+        // Initialize Level 1 Owner specific UI if applicable
+        if (window.currentUserRole === '1') {
+            if (typeof initializeLevel1OwnerInterface === 'function') {
+                initializeLevel1OwnerInterface();
+            } else {
+                console.error('initializeLevel1OwnerInterface function not found. Make sure tenantManagement.js is loaded.');
+            }
+        } else {
+            // Hide L1 specific elements if user is not L1
+            const l1Tabs = document.getElementById('level1-owner-tabs-container');
+            if (l1Tabs) l1Tabs.classList.add('hidden');
+            const tenantManagementSection = document.getElementById('manage-tenants-content');
+            if (tenantManagementSection) tenantManagementSection.classList.add('hidden');
+            // Ensure default room content is visible for non-L1 if L1 tabs were planned
+             const myRoomsContent = document.getElementById('my-rooms-content');
+             if (myRoomsContent) myRoomsContent.classList.remove('hidden');
+        }
+
+        // Add event listeners for the 'Add Room' modal - permission check inside handler or here
+        // This button might be visible to Admin and Level 1 Owner
         const addRoomBtn = document.getElementById('btn-add-room');
         const closeAddRoomModalBtn = document.getElementById('close-add-room-modal');
         const addRoomModal = document.getElementById('add-room-modal');
@@ -87,27 +112,50 @@ function initializePageContent() {
 // --- Data Rendering ---
 
 async function renderHomeRoomCards() {
-    // Use hasPermission from auth.js
-    if (!hasPermission('canViewAllRooms')) {
-        const cardsContainer = document.getElementById('home-room-cards');
-        if (cardsContainer) {
-            cardsContainer.innerHTML = `<p class="text-center text-red-400 col-span-full">คุณไม่มีสิทธิ์ดูข้อมูลห้อง</p>`;
-        }
-        return;
-    }
-
     const cardsContainer = document.getElementById('home-room-cards');
     if (!cardsContainer) return;
 
+    const user = window.currentUser;
+    const userRole = window.currentUserRole;
+    const userData = window.currentUserData; // Contains managedRooms or accessibleRooms
+
+    if (!user) {
+        cardsContainer.innerHTML = `<p class="text-center text-red-400 col-span-full">กรุณาเข้าสู่ระบบเพื่อดูข้อมูล</p>`;
+        return;
+    }
+
     try {
-        const bills = await loadFromFirebase();
-        if (!bills || bills.length === 0) {
+        let allBills = await loadFromFirebase(); // Load all bills first
+        if (!allBills || allBills.length === 0) {
             cardsContainer.innerHTML = '<p class="text-center text-gray-400 col-span-full">ยังไม่มีข้อมูลห้องพัก</p>';
             return;
         }
 
+        let displayableBills = [];
+        if (userRole === 'admin' || (userRole === 'user' && hasPermission('canViewAllRooms'))) { // Admin and general 'user' with permission see all
+            displayableBills = allBills;
+        } else if (userRole === '1' && userData && userData.managedRooms) { // Level 1 Owner
+            displayableBills = allBills.filter(bill => userData.managedRooms.includes(bill.room));
+        } else if (userRole === 'level1_tenant' && userData && userData.accessibleRooms) { // Level 1 Tenant
+            displayableBills = allBills.filter(bill => userData.accessibleRooms.includes(bill.room));
+        } else {
+            // If user is 'user' without canViewAllRooms, or L1/L1_Tenant without room assignments
+            if (!hasPermission('canViewAllRooms')) { // Check general permission first
+                 cardsContainer.innerHTML = `<p class="text-center text-red-400 col-span-full">คุณไม่มีสิทธิ์ดูข้อมูลห้อง</p>`;
+                 return;
+            }
+            // Fallback for roles like '2' or 'user' who might have canViewAllRooms but no specific room list
+            // This part might need refinement based on exact logic for 'user' and '2'
+            displayableBills = allBills;
+        }
+
+        if (displayableBills.length === 0) {
+            cardsContainer.innerHTML = '<p class="text-center text-gray-400 col-span-full">ไม่พบข้อมูลห้องพักที่คุณมีสิทธิ์เข้าถึง</p>';
+            return;
+        }
+
         const rooms = {};
-        bills.forEach(bill => {
+        displayableBills.forEach(bill => {
             if (!rooms[bill.room] || new Date(bill.date.split('/').reverse().join('-')) > new Date(rooms[bill.room].date.split('/').reverse().join('-'))) {
                 rooms[bill.room] = bill;
             }
@@ -115,8 +163,8 @@ async function renderHomeRoomCards() {
 
         const sortedRooms = Object.values(rooms).sort((a, b) => a.room.localeCompare(b.room));
 
-        cardsContainer.innerHTML = sortedRooms.map(room => {
-            const totalAmount = Number(room.total || 0);
+        cardsContainer.innerHTML = sortedRooms.map(roomData => { // Changed variable name from room to roomData
+            const totalAmount = Number(roomData.total || 0);
             const amountColor = getAmountColor(totalAmount);
             const dueDateInfo = getDueDateInfo(room.dueDate);
 
@@ -182,12 +230,25 @@ async function renderHistoryTable(room) {
     
     if (!historyBody || !noHistory || !historySection) return;
 
+    // Permission check for viewing history of this specific room
+    if (!hasPermission('canViewHistory', room)) {
+        historyBody.innerHTML = '';
+        noHistory.innerHTML = `<p class="text-center text-red-400">คุณไม่มีสิทธิ์ดูประวัติของห้อง ${room}</p>`;
+        noHistory.classList.remove('hidden');
+        historySection.style.display = 'none'; // Hide the table section
+        // Also hide the form for adding new bills if it exists on this page
+        const billForm = document.getElementById('bill-form'); // Assuming your form has this ID
+        if (billForm) billForm.style.display = 'none';
+        return;
+    }
+
     try {
-        const bills = await loadFromFirebase(room);
+        const bills = await loadFromFirebase(room); // loadFromFirebase already filters by room if room is provided
 
         if (!bills || bills.length === 0) {
             historyBody.innerHTML = '';
             noHistory.classList.remove('hidden');
+            noHistory.innerHTML = `<p class="text-center text-gray-400">ไม่พบประวัติสำหรับห้อง ${room}</p>`;
             historySection.style.display = 'none';
             return;
         }
@@ -217,22 +278,22 @@ async function renderHistoryTable(room) {
 
                 <td class="py-3 px-3 text-center">
                     <div class="flex items-center justify-center gap-3">
-                        ${hasPermission('canGenerateQRCode') ? 
+                        ${hasPermission('canGenerateQRCode', room) ?
                             `<button onclick='generateQRCode(${JSON.stringify(bill)})' class="text-purple-400 hover:text-purple-300 transition-colors" title="สร้าง QR Code ชำระเงิน"><i class="fas fa-qrcode"></i></button>` : ''
                         }
-                        ${hasPermission('canUploadEvidence') ? 
+                        ${hasPermission('canUploadEvidence', room) ?
                             `<button onclick="openEvidenceModal('${bill.key}')" class="text-green-400 hover:text-green-300 transition-colors" title="แนบหลักฐาน"><i class="fas fa-upload"></i></button>` : ''
                         }
                         ${bill.evidenceUrl ? 
                             `<button onclick="viewEvidence('${bill.evidenceUrl}', '${bill.evidenceFileName || 'หลักฐานการชำระเงิน'}')" class="text-blue-400 hover:text-blue-300 transition-colors" title="ดูหลักฐาน"><i class="fas fa-eye"></i></button>` : ''
                         }
-                        ${hasPermission('canUploadEvidence') && bill.evidenceUrl ? 
+                        ${hasPermission('canUploadEvidence', room) && bill.evidenceUrl ? // Permission to delete evidence might be same as upload or a new one
                             `<button onclick="deleteEvidence('${bill.key}')" class="text-orange-400 hover:text-orange-300 transition-colors" title="ลบหลักฐาน"><i class="fas fa-trash-alt"></i></button>` : ''
                         }
-                        ${hasPermission('canEditAllBills') ? 
+                        ${hasPermission('canEditAllBills', room) ?  // Note: 'canEditAllBills' might be too broad for L1, consider a more specific 'canEditOwnRoomBills'
                             `<button onclick="openEditModal('${bill.key}')" class="text-blue-400 hover:text-blue-300 transition-colors" title="แก้ไข"><i class="fas fa-edit"></i></button>` : ''
                         }
-                        ${hasPermission('canDeleteBills') ? 
+                        ${hasPermission('canDeleteBills', room) ? // Similar to edit, 'canDeleteOwnRoomBills'
                             `<button onclick="openDeleteConfirmModal('${bill.key}')" class="text-red-400 hover:text-red-300 transition-colors" title="ลบ"><i class="fas fa-trash"></i></button>` : ''
                         }
                     </div>
@@ -393,14 +454,14 @@ async function handleAddRoom(event) {
 }
 
 async function calculateBill() {
+    const room = new URLSearchParams(window.location.search).get('room');
     // Permission Check
-    if (!hasPermission('canAddBills')) {
-        showAlert('คุณไม่มีสิทธิ์เพิ่มข้อมูลใหม่', 'error');
+    if (!hasPermission('canAddNewBills', room)) { // Check permission for the specific room
+        showAlert('คุณไม่มีสิทธิ์เพิ่มข้อมูลใหม่สำหรับห้องนี้', 'error');
         return;
     }
 
     // Getting values from the form
-    const room = new URLSearchParams(window.location.search).get('room');
     const billDate = document.getElementById('bill-date').value;
     const dueDate = document.getElementById('due-date').value; // New field
     const currentReading = parseFloat(document.getElementById('current-reading').value);
@@ -497,16 +558,18 @@ async function calculateBill() {
 }
 
 async function openEditModal(key) {
-    if (!hasPermission('canEditAllBills')) {
-        showAlert('คุณไม่มีสิทธิ์แก้ไขข้อมูล', 'error');
-        return;
-    }
-    
     try {
         const snapshot = await db.ref(`electricityData/${key}`).once('value');
         const data = snapshot.val();
         if (!data) {
             showAlert('ไม่พบข้อมูลที่ต้องการแก้ไข', 'error');
+            return;
+        }
+
+        // Permission Check for the specific room
+        if (!hasPermission('canEditAllBills', data.room)) { // Assuming 'canEditAllBills' is the correct perm for editing any bill one has access to.
+                                                       // Or it could be a more specific one like 'canEditOwnRoomBills'
+            showAlert(`คุณไม่มีสิทธิ์แก้ไขข้อมูลของห้อง ${data.room}`, 'error');
             return;
         }
 
@@ -546,19 +609,30 @@ async function openEditModal(key) {
 }
 
 async function saveEdit() {
-    if (!hasPermission('canEditAllBills')) {
-        showAlert('คุณไม่มีสิทธิ์แก้ไขข้อมูล', 'error');
-        return;
-    }
-    
-    if (editingIndex === -1) {
-        showAlert('ไม่พบข้อมูลที่ต้องการแก้ไข', 'error');
+    if (editingIndex === -1) { // editingIndex is the key of the bill being edited
+        showAlert('ไม่พบข้อมูลที่ต้องการแก้ไข (No editing index)', 'error');
         return;
     }
 
     try {
+        // Get original room to check permission before saving
+        const originalSnapshot = await db.ref(`electricityData/${editingIndex}`).once('value');
+        const originalData = originalSnapshot.val();
+        if (!originalData) {
+            showAlert('ไม่พบข้อมูลเดิมที่ต้องการแก้ไข', 'error');
+            editingIndex = -1; // Reset
+            closeModal();
+            return;
+        }
+
+        // Permission Check for the specific room
+        if (!hasPermission('canEditAllBills', originalData.room)) {
+            showAlert(`คุณไม่มีสิทธิ์บันทึกการแก้ไขข้อมูลของห้อง ${originalData.room}`, 'error');
+            return;
+        }
+
         // Get form values
-        const room = document.getElementById('edit-room').value;
+        const room = document.getElementById('edit-room').value; // Room number might be changed by admin
         const name = document.getElementById('edit-name').value;
         const date = document.getElementById('edit-date').value;
         const current = parseFloat(document.getElementById('edit-current').value) || 0;
@@ -899,12 +973,30 @@ function closeEvidenceModal() {
 }
 
 function openDeleteConfirmModal(key) {
-    if (!hasPermission('canDeleteBills')) {
-        showAlert('คุณไม่มีสิทธิ์ลบข้อมูล', 'error');
-        return;
-    }
-    
-    keyToDelete = key;
+    // Fetch the bill data to check which room it belongs to for permission check
+    db.ref(`electricityData/${key}`).once('value').then(snapshot => {
+        const billData = snapshot.val();
+        if (!billData) {
+            showAlert('ไม่พบข้อมูลที่ต้องการลบ', 'error');
+            return;
+        }
+        if (!hasPermission('canDeleteBills', billData.room)) {
+            showAlert(`คุณไม่มีสิทธิ์ลบข้อมูลของห้อง ${billData.room}`, 'error');
+            return;
+        }
+
+        keyToDelete = key;
+        const modal = document.getElementById('delete-confirm-modal');
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+    }).catch(error => {
+        console.error("Error fetching bill data for delete confirmation:", error);
+        showAlert('เกิดข้อผิดพลาดในการตรวจสอบสิทธิ์การลบ', 'error');
+    });
+}
+
+function closeDeleteConfirmModal() {
+    keyToDelete = null;
     const modal = document.getElementById('delete-confirm-modal');
     modal.classList.remove('hidden');
     modal.classList.add('flex');
@@ -924,30 +1016,46 @@ function closeQrCodeModal() {
 }
 
 async function confirmDelete() {
-    if (!hasPermission('canDeleteBills')) {
-        showAlert('คุณไม่มีสิทธิ์ลบข้อมูล', 'error');
-        return;
-    }
-    
     if (!keyToDelete) {
-        showAlert('ไม่พบข้อมูลที่ต้องการลบ', 'error');
+        showAlert('ไม่พบข้อมูลที่ต้องการลบ (No key to delete)', 'error');
+        closeDeleteConfirmModal();
         return;
     }
 
     try {
+        // Fetch the bill data again to double check permission for the room before actual deletion
+        const snapshot = await db.ref(`electricityData/${keyToDelete}`).once('value');
+        const billData = snapshot.val();
+
+        if (!billData) {
+            showAlert('ไม่พบข้อมูลที่ต้องการลบแล้ว (อาจถูกลบไปแล้ว)', 'warning');
+            closeDeleteConfirmModal();
+            return;
+        }
+
+        if (!hasPermission('canDeleteBills', billData.room)) {
+            showAlert(`คุณไม่มีสิทธิ์ลบข้อมูลของห้อง ${billData.room}`, 'error');
+            closeDeleteConfirmModal();
+            return;
+        }
+
         await db.ref(`electricityData/${keyToDelete}`).remove();
         showAlert('ลบข้อมูลเรียบร้อยแล้ว', 'success');
         
         const params = new URLSearchParams(window.location.search);
-        const room = params.get('room');
+        const roomParam = params.get('room'); // Renamed to avoid conflict
         currentPage = 1;
-        renderHistoryTable(room);
-        updatePreviousReadingFromDB(room);
+        if (roomParam) { // Ensure roomParam exists before using it
+            renderHistoryTable(roomParam);
+            updatePreviousReadingFromDB(roomParam);
+        } else {
+            renderHomeRoomCards(); // Refresh home if on home page
+        }
     } catch (error) {
         console.error('Error deleting bill:', error);
         showAlert('เกิดข้อผิดพลาดในการลบข้อมูล', 'error');
     } finally {
-        closeDeleteConfirmModal();
+        closeDeleteConfirmModal(); // Ensure keyToDelete is cleared and modal is closed
     }
 }
 
@@ -961,7 +1069,7 @@ async function handleEvidenceUpload() {
     console.log('File input:', fileInput);
     console.log('Camera input:', cameraInput);
     console.log('Selected file:', file);
-    console.log('keyForEvidence:', keyForEvidence);
+    console.log('keyForEvidence (bill key):', keyForEvidence);
     
     if (!file) {
         console.error('No file selected');
@@ -970,8 +1078,29 @@ async function handleEvidenceUpload() {
     }
     
     if (!keyForEvidence) {
-        console.error('No keyForEvidence');
+        console.error('No keyForEvidence (bill key)');
         showAlert('เกิดข้อผิดพลาด: ไม่พบข้อมูลที่ต้องการแนบหลักฐาน', 'error');
+        return;
+    }
+
+    // Fetch bill data to check room for permission
+    let billRoom;
+    try {
+        const billSnapshot = await db.ref(`electricityData/${keyForEvidence}`).once('value');
+        const billData = billSnapshot.val();
+        if (!billData || !billData.room) {
+            showAlert('ไม่พบข้อมูลห้องสำหรับบิลนี้ ไม่สามารถตรวจสอบสิทธิ์ได้', 'error');
+            return;
+        }
+        billRoom = billData.room;
+
+        if (!hasPermission('canUploadEvidence', billRoom)) {
+            showAlert(`คุณไม่มีสิทธิ์อัปโหลดหลักฐานสำหรับห้อง ${billRoom}`, 'error');
+            return;
+        }
+    } catch (error) {
+        console.error("Error fetching bill data for permission check:", error);
+        showAlert('เกิดข้อผิดพลาดในการตรวจสอบสิทธิ์อัปโหลด', 'error');
         return;
     }
 
@@ -1467,12 +1596,18 @@ function setupEvidenceModalListeners() {
 }
 
 function generateQRCode(record) {
-    if (!hasPermission('canGenerateQRCode')) {
-        showAlert('คุณไม่มีสิทธิ์สร้าง QR Code', 'error');
+    if (!record || !record.room) {
+        console.error("Record not found or room missing in record");
+        showAlert('ไม่พบข้อมูลที่ถูกต้องสำหรับสร้าง QR Code', 'error');
+        return;
+    }
+
+    if (!hasPermission('canGenerateQRCode', record.room)) {
+        showAlert(`คุณไม่มีสิทธิ์สร้าง QR Code สำหรับห้อง ${record.room}`, 'error');
         return;
     }
     
-    if (!record) {
+    if (!record) { // This check is somewhat redundant now but kept for safety.
         console.error("Record not found");
         showAlert('ไม่พบข้อมูลสำหรับสร้าง QR Code', 'error');
         return;
@@ -1658,30 +1793,36 @@ function downloadQRCode() {
 
 async function deleteEvidence(key) {
     console.log('=== deleteEvidence started ===');
-    console.log('Key parameter:', key);
-    
-    if (!hasPermission('canUploadEvidence')) {
-        showAlert('คุณไม่มีสิทธิ์ลบหลักฐาน', 'error');
-        return;
-    }
+    console.log('Key parameter (bill key):', key);
     
     if (!key) {
-        showAlert('ไม่พบข้อมูลที่ต้องการลบหลักฐาน', 'error');
-        return;
-    }
-    
-    // Confirm deletion
-    if (!confirm('คุณแน่ใจหรือไม่ว่าต้องการลบหลักฐานนี้? การกระทำนี้ไม่สามารถย้อนกลับได้')) {
+        showAlert('ไม่พบข้อมูล (key) ที่ต้องการลบหลักฐาน', 'error');
         return;
     }
     
     try {
-        // Get current evidence data
+        // Get current evidence data to find the room for permission check
         const snapshot = await db.ref(`electricityData/${key}`).once('value');
         const data = snapshot.val();
         
-        if (!data || !data.evidenceUrl) {
-            showAlert('ไม่พบหลักฐานที่ต้องการลบ', 'error');
+        if (!data || !data.room) {
+            showAlert('ไม่พบข้อมูลห้องสำหรับบิลนี้ ไม่สามารถตรวจสอบสิทธิ์ได้', 'error');
+            return;
+        }
+
+        // Permission to delete evidence - using 'canUploadEvidence' for now, might need a specific 'canDeleteEvidence'
+        if (!hasPermission('canUploadEvidence', data.room)) {
+            showAlert(`คุณไม่มีสิทธิ์ลบหลักฐานสำหรับห้อง ${data.room}`, 'error');
+            return;
+        }
+
+        if (!data.evidenceUrl) {
+            showAlert('ไม่พบหลักฐานที่ต้องการลบ (URL missing)', 'info');
+            return;
+        }
+
+        // Confirm deletion
+        if (!confirm('คุณแน่ใจหรือไม่ว่าต้องการลบหลักฐานนี้? การกระทำนี้ไม่สามารถย้อนกลับได้')) {
             return;
         }
         
@@ -1693,7 +1834,8 @@ async function deleteEvidence(key) {
                 console.log('Evidence file deleted from storage');
             } catch (storageError) {
                 console.error('Error deleting from storage:', storageError);
-                // Continue with database update even if storage deletion fails
+                // Continue with database update even if storage deletion fails, but inform user.
+                showAlert('ลบไฟล์หลักฐานจาก Storage ไม่สำเร็จ แต่อัปเดตข้อมูลในระบบแล้ว', 'warning');
             }
         }
         
