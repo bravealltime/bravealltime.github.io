@@ -1143,6 +1143,8 @@ function openEvidenceModal(key) {
     console.log('Modal element found:', !!modal);
     
     if (modal) {
+        // Set the key in the modal's dataset for the newer implementation
+        modal.dataset.key = key;
         modal.classList.remove('hidden');
         modal.classList.add('flex');
         console.log('Modal opened successfully');
@@ -1452,57 +1454,58 @@ async function handleEvidenceUpload() {
         logUploadEvent('firebase_check_started');
         console.log('Checking Firebase Storage availability...');
         
-        // Validate Firebase Storage before upload
-        const storageValidation = await validateFirebaseStorage();
-        if (!storageValidation.success) {
-            logUploadEvent('upload_failed', { 
-                reason: 'storage_validation_failed',
-                error: storageValidation.error,
-                code: storageValidation.code
-            });
-            throw new Error(`การตรวจสอบ Firebase Storage ล้มเหลว: ${storageValidation.error}`);
-        }
-        
         // Check if Firebase is initialized
         if (!firebase || !firebase.apps || firebase.apps.length === 0) {
             logUploadEvent('upload_failed', { reason: 'firebase_not_initialized' });
             throw new Error('Firebase ยังไม่ได้เริ่มต้น กรุณารีเฟรชหน้าเว็บ');
         }
         
-        // Check if Firebase Storage is available
-        if (!firebase.storage) {
-            logUploadEvent('upload_failed', { reason: 'firebase_storage_unavailable' });
-            console.error('Firebase Storage not available');
-            throw new Error('Firebase Storage ไม่พร้อมใช้งาน');
-        }
-
         // Check if user is authenticated
         if (!auth.currentUser) {
             logUploadEvent('upload_failed', { reason: 'user_not_authenticated' });
             throw new Error('กรุณาเข้าสู่ระบบก่อนอัปโหลดไฟล์');
         }
 
-        // Get storage usage info
-        const usageInfo = await getStorageUsageInfo();
-        if (usageInfo) {
-            console.log('Current storage usage:', usageInfo);
-            logUploadEvent('storage_usage_checked', usageInfo);
-            
-            // Check if user is approaching storage limit (e.g., 50MB)
-            const usageMB = parseFloat(usageInfo.totalSizeMB);
-            if (usageMB > 45) {
-                console.warn('User approaching storage limit:', usageMB, 'MB');
-                showAlert(`คำเตือน: คุณใช้พื้นที่จัดเก็บ ${usageMB} MB จาก 50 MB แล้ว`, 'warning');
+        // Get storage instance - try multiple approaches
+        let storageInstance;
+        try {
+            // Try global storage variable first
+            storageInstance = window.storage || firebase.storage();
+        } catch (storageError) {
+            console.warn('Could not get storage instance:', storageError);
+            logUploadEvent('upload_failed', { reason: 'storage_instance_failed', error: storageError.message });
+            throw new Error('ไม่สามารถเข้าถึง Firebase Storage ได้ กรุณาลองรีเฟรชหน้าเว็บ');
+        }
+
+        if (!storageInstance) {
+            logUploadEvent('upload_failed', { reason: 'storage_instance_null' });
+            throw new Error('Firebase Storage ไม่พร้อมใช้งาน');
+        }
+
+        // Get storage usage info (optional - don't fail if this doesn't work)
+        try {
+            const usageInfo = await getStorageUsageInfo();
+            if (usageInfo) {
+                console.log('Current storage usage:', usageInfo);
+                logUploadEvent('storage_usage_checked', usageInfo);
+                
+                // Check if user is approaching storage limit (e.g., 50MB)
+                const usageMB = parseFloat(usageInfo.totalSizeMB);
+                if (usageMB > 45) {
+                    console.warn('User approaching storage limit:', usageMB, 'MB');
+                    showAlert(`คำเตือน: คุณใช้พื้นที่จัดเก็บ ${usageMB} MB จาก 50 MB แล้ว`, 'warning');
+                }
             }
+        } catch (usageError) {
+            console.warn('Could not check storage usage:', usageError);
+            // Continue with upload even if usage check fails
         }
 
         console.log('Firebase Storage is available');
         console.log('User authenticated:', auth.currentUser.uid);
-        console.log('Firebase config:', firebase.app().options);
 
-        // Get storage instance
-        const storage = firebase.storage();
-        const storageRef = storage.ref();
+        // Get storage reference
+        const storageRef = storageInstance.ref();
         
         // Create unique filename with timestamp and user ID
         const timestamp = Date.now();
@@ -3190,9 +3193,12 @@ document.addEventListener('DOMContentLoaded', function() {
             const currentKey = evidenceModal.dataset.key;
             if (!fileToUpload || !currentKey) {
                 console.error("ไม่มีไฟล์หรือ Key สำหรับบันทึก");
+                console.log("Debug info:", { fileToUpload: !!fileToUpload, currentKey });
+                // Try to call the main upload function which handles its own validation
+                await handleEvidenceUpload();
                 return;
             }
-            await uploadEvidence(currentKey, fileToUpload);
+            await handleEvidenceUpload();
         });
     }
 
@@ -3325,8 +3331,9 @@ async function validateFirebaseStorage() {
             throw new Error('Firebase not initialized');
         }
         
-        // Check if Storage is available
-        if (!firebase.storage) {
+        // Check if Storage is available - use global storage variable or firebase.storage()
+        const storageInstance = window.storage || firebase.storage();
+        if (!storageInstance) {
             throw new Error('Firebase Storage not available');
         }
         
@@ -3336,8 +3343,7 @@ async function validateFirebaseStorage() {
         }
         
         // Test storage access with a small test file
-        const storage = firebase.storage();
-        const testRef = storage.ref(`test/${auth.currentUser.uid}/test.txt`);
+        const testRef = storageInstance.ref(`test/${auth.currentUser.uid}/test.txt`);
         
         // Try to upload a small test file
         const testBlob = new Blob(['test'], { type: 'text/plain' });
@@ -3368,7 +3374,12 @@ async function validateFirebaseStorage() {
 // Add function to get storage usage information
 async function getStorageUsageInfo() {
     try {
-        const storage = firebase.storage();
+        // Get storage instance - try multiple approaches
+        const storageInstance = window.storage || firebase.storage();
+        if (!storageInstance) {
+            throw new Error('Firebase Storage not available');
+        }
+        
         const userID = auth.currentUser?.uid;
         
         if (!userID) {
@@ -3376,7 +3387,7 @@ async function getStorageUsageInfo() {
         }
         
         // List files in user's evidence folder
-        const evidenceRef = storage.ref('evidence');
+        const evidenceRef = storageInstance.ref('evidence');
         const result = await evidenceRef.listAll();
         
         let totalSize = 0;
@@ -3427,8 +3438,11 @@ async function deleteEvidenceFromStorage(evidenceUrl, billKey) {
         console.log('File path to delete:', filePath);
         
         // Get storage reference
-        const storage = firebase.storage();
-        const fileRef = storage.ref(filePath);
+        const storageInstance = window.storage || firebase.storage();
+        if (!storageInstance) {
+            throw new Error('Firebase Storage not available');
+        }
+        const fileRef = storageInstance.ref(filePath);
         
         // Delete the file
         await fileRef.delete();
@@ -3470,8 +3484,11 @@ async function getEvidenceMetadata(evidenceUrl) {
         }
         
         const filePath = decodeURIComponent(pathMatch[1]);
-        const storage = firebase.storage();
-        const fileRef = storage.ref(filePath);
+        const storageInstance = window.storage || firebase.storage();
+        if (!storageInstance) {
+            return null;
+        }
+        const fileRef = storageInstance.ref(filePath);
         
         const metadata = await fileRef.getMetadata();
         return metadata;
