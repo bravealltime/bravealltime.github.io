@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>โปรไฟล์ | Electricity Bill Calculator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { font-family: 'Kanit', sans-serif; }
+    </style>
+</head>
+<body class="bg-slate-900 min-h-screen text-slate-200 requires-auth">
+    <!-- Navigation Bar -->
+    <nav class="bg-slate-800 border-b border-slate-700 sticky top-0 z-40">
+        <div class="container mx-auto px-4 py-3">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-4">
+                    <a href="home.html" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-medium flex items-center shadow-md transition">
+                        <i class="fas fa-arrow-left mr-2"></i> กลับหน้าหลัก
+                    </a>
+                </div>
+                <div id="auth-container" class="flex items-center space-x-4">
+                    <!-- Auth buttons will be populated here by auth.js -->
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mx-auto px-4 py-8">
+        <div class="max-w-5xl mx-auto">
+            <!-- Profile Header -->
+            <div class="bg-slate-800 rounded-2xl p-6 shadow-lg border border-slate-700 mb-8">
+                <div class="flex flex-col sm:flex-row items-center space-y-4 sm:space-y-0 sm:space-x-6">
+                    <div class="relative">
+                        <div id="profile-image-container" class="w-24 h-24 rounded-full bg-slate-700 flex items-center justify-center overflow-hidden border-2 border-slate-600">
+                            <img id="profile-image" src="" alt="Profile" class="w-full h-full object-cover hidden">
+                            <i id="profile-icon" class="fas fa-user text-4xl text-slate-500"></i>
+                        </div>
+                        <label for="photo-upload" class="absolute bottom-0 right-0 bg-blue-600 hover:bg-blue-700 text-white rounded-full p-2 cursor-pointer transition-transform hover:scale-110">
+                            <i class="fas fa-camera text-sm"></i>
+                            <input type="file" id="photo-upload" class="hidden" accept="image/*">
+                        </label>
+                    </div>
+                    <div class="flex-1 text-center sm:text-left">
+                        <h1 id="user-name-display" class="text-3xl font-bold text-white mb-1">กำลังโหลด...</h1>
+                        <p id="user-email-display" class="text-slate-400 mb-2">กำลังโหลด...</p>
+                        <div class="flex items-center justify-center sm:justify-start space-x-4">
+                            <span id="user-role-display" class="px-3 py-1 rounded-full text-sm font-medium border">
+                                กำลังโหลด...
+                            </span>
+                            <span id="user-joined-display" class="text-slate-500 text-sm">เข้าร่วมเมื่อ: กำลังโหลด...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <!-- Left Column: Edit Forms -->
+                <div class="lg:col-span-2 space-y-8">
+                    <!-- Personal Info -->
+                    <div class="bg-slate-800 rounded-2xl p-6 shadow-lg border border-slate-700">
+                        <h2 class="text-xl font-bold text-white mb-6 flex items-center"><i class="fas fa-user-edit mr-3 text-blue-400"></i>ข้อมูลส่วนตัว</h2>
+                        <form id="profile-form" class="space-y-4">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label for="profile-name" class="block text-sm font-medium text-slate-300 mb-1">ชื่อ-นามสกุล</label>
+                                    <input type="text" id="profile-name" required class="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition" placeholder="ชื่อ-นามสกุล">
+                                </div>
+                                <div>
+                                    <label for="profile-phone" class="block text-sm font-medium text-slate-300 mb-1">เบอร์โทรศัพท์</label>
+                                    <input type="tel" id="profile-phone" class="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition" placeholder="กรอกเบอร์โทรศัพท์">
+                                </div>
+                            </div>
+                            <div>
+                                <label for="profile-address" class="block text-sm font-medium text-slate-300 mb-1">ที่อยู่</label>
+                                <textarea id="profile-address" rows="3" class="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition resize-y" placeholder="กรอกที่อยู่"></textarea>
+                            </div>
+                            <div class="flex justify-end pt-2">
+                                <button type="submit" class="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors flex items-center gap-2">
+                                    <i class="fas fa-save"></i>บันทึกข้อมูล
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- Change Password -->
+                    <div class="bg-slate-800 rounded-2xl p-6 shadow-lg border border-slate-700">
+                        <h2 class="text-xl font-bold text-white mb-6 flex items-center"><i class="fas fa-lock mr-3 text-green-400"></i>เปลี่ยนรหัสผ่าน</h2>
+                        <form id="password-form" class="space-y-4">
+                            <div class="relative">
+                                <label for="current-password" class="block text-sm font-medium text-slate-300 mb-1">รหัสผ่านปัจจุบัน</label>
+                                <input type="password" id="current-password" required class="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition pr-10" placeholder="กรอกรหัสผ่านปัจจุบัน">
+                                <button type="button" class="toggle-password absolute right-3 top-9 text-slate-400 hover:text-white"><i class="fas fa-eye"></i></button>
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div class="relative">
+                                    <label for="new-password" class="block text-sm font-medium text-slate-300 mb-1">รหัสผ่านใหม่</label>
+                                    <input type="password" id="new-password" required class="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition pr-10" placeholder="อย่างน้อย 6 ตัวอักษร">
+                                    <button type="button" class="toggle-password absolute right-3 top-9 text-slate-400 hover:text-white"><i class="fas fa-eye"></i></button>
+                                </div>
+                                <div class="relative">
+                                    <label for="confirm-new-password" class="block text-sm font-medium text-slate-300 mb-1">ยืนยันรหัสผ่านใหม่</label>
+                                    <input type="password" id="confirm-new-password" required class="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition pr-10" placeholder="ยืนยันรหัสผ่านใหม่">
+                                    <button type="button" class="toggle-password absolute right-3 top-9 text-slate-400 hover:text-white"><i class="fas fa-eye"></i></button>
+                                </div>
+                            </div>
+                            <div class="flex justify-end pt-2">
+                                <button type="submit" class="px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors flex items-center gap-2">
+                                    <i class="fas fa-key"></i>เปลี่ยนรหัสผ่าน
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Right Column: Sidebar Info -->
+                <div class="lg:col-span-1">
+                    <div class="bg-slate-800 rounded-2xl p-6 shadow-lg border border-slate-700">
+                        <h3 class="text-lg font-bold text-white mb-4 flex items-center"><i class="fas fa-info-circle mr-3 text-cyan-400"></i>สถานะบัญชี</h3>
+                        <div class="space-y-3 text-sm">
+                            <div class="flex justify-between">
+                                <span class="text-slate-400">อีเมล:</span>
+                                <span id="sidebar-email" class="font-medium text-right truncate">กำลังโหลด...</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-slate-400">ตำแหน่ง:</span>
+                                <span id="sidebar-role" class="font-medium text-right">กำลังโหลด...</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-slate-400">เข้าร่วมเมื่อ:</span>
+                                <span id="sidebar-joined" class="font-medium text-right">กำลังโหลด...</span>
+                            </div>
+                             <div class="flex justify-between">
+                                <span class="text-slate-400">เข้าสู่ระบบล่าสุด:</span>
+                                <span id="sidebar-last-login" class="font-medium text-right">กำลังโหลด...</span>
+                            </div>
+                        </div>
+
+                        <h3 class="text-lg font-bold text-white mb-4 mt-8 flex items-center"><i class="fas fa-cogs mr-3 text-purple-400"></i>การตั้งค่า</h3>
+                         <div class="space-y-3 text-sm">
+                            <a href="admin.html" id="admin-panel-link" class="hidden w-full text-center px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2">
+                                <i class="fas fa-user-shield"></i>จัดการผู้ใช้ (Admin)
+                            </a>
+                             <a href="home.html" id="home-link" class="w-full text-center px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2">
+                                <i class="fas fa-home"></i>กลับหน้าหลัก
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Toast Notification Placeholder -->
+    <div id="toast-container" class="fixed bottom-5 right-5 z-50"></div>
+    
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-storage-compat.js"></script>
+    
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyC2DvQt-VXfeEeip9thWXLKnstHmyx_eOk",
+            authDomain: "electricity-bill-calcula-ea4a2.firebaseapp.com",
+            databaseURL: "https://electricity-bill-calcula-ea4a2-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "electricity-bill-calcula-ea4a2",
+            storageBucket: "electricity-bill-calcula-ea4a2.appspot.com",
+            messagingSenderId: "79440126022",
+            appId: "1:79440126022:web:7ffbc16c6661bc75dc6a47",
+            measurementId: "G-7JD6H3Q0PM"
+        };
+        let db, auth, storage; // Make them available globally for other scripts
+        try {
+            if (!firebase.apps.length) {
+                firebase.initializeApp(firebaseConfig);
+            }
+            db = firebase.database();
+            auth = firebase.auth();
+            storage = firebase.storage();
+        } catch (error) {
+            console.error('Firebase initialization error:', error);
+        }
+    </script>
+
+    <script src="auth.js"></script>
+    <script src="profile.js"></script>
+</body>
+</html> 
