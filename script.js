@@ -13,27 +13,14 @@ let keyToDelete = null; // For delete confirmation modal
 
 // --- Authentication & Initialization ---
 
-document.addEventListener('DOMContentLoaded', async function() {
-    // This check is for all pages that require authentication
-    // Add the 'requires-auth' class to the body tag of pages that need it.
-    if (document.body.classList.contains('requires-auth')) {
-        // checkAuth() now resolves with the user object or null
-        const user = await checkAuth(); // from auth.js
-        if (!user) {
-            window.location.href = 'login.html';
-            return;
-        }
-        
-        // Set global user variables (already done in auth.js, but ensure consistency)
-        window.currentUser = user;
-        window.currentUserRole = user.role;
-        // window.currentUserData is also set in auth.js after getUserData
+document.addEventListener('DOMContentLoaded', async () => {
+    console.log('DOM fully loaded and parsed');
 
-        // Update UI elements like navbar, user profile icon etc.
-        updateAuthUI(user); // Pass the user object to updateAuthUI
-
-        // Load page-specific data after authentication is confirmed
-        initializePageContent();
+    // Initialize theme first
+    const themeToggleButton = document.getElementById('theme-toggle');
+    if (themeToggleButton) {
+        themeToggleButton.addEventListener('click', toggleTheme);
+        applyInitialTheme();
     }
 
     // Add a global click listener to close dropdowns when clicking outside
@@ -43,79 +30,132 @@ document.addEventListener('DOMContentLoaded', async function() {
              closeActionsMenu();
         }
     });
+    
+    // Check for authentication requirement
+    if (document.body.classList.contains('requires-auth')) {
+        const user = await checkAuth();
+        if (!user) {
+            window.location.href = 'login.html';
+            return;
+        }
+        
+        window.currentUser = user; // Now an object from auth.js
+        window.currentUserRole = user.role;
+        window.currentUserData = user;
+        
+        updateAuthUI(user);
+        initializePageContent(user); // Pass user to initialization
+    } else {
+        // For pages that don't require auth, but might have auth-aware elements
+        checkAuth().then(user => {
+            if(user) {
+                window.currentUser = user;
+                window.currentUserRole = user.role;
+                window.currentUserData = user;
+                updateAuthUI(user);
+            }
+            initializePageContent(user); // Initialize with or without user
+        });
+    }
 });
 
-function initializePageContent() {
-    // Route to the correct function based on the current page
-    if (document.getElementById('home-room-cards') || document.getElementById('level1-owner-tabs-container')) { // Check for L1 tabs too
-        renderHomeRoomCards(); // This will now use global currentUser, currentUserRole, currentUserData
+function initializePageContent(user) {
+    console.log('Initializing page content...');
+    // Route to the correct function based on the current page content
+    if (document.getElementById('home-room-cards') || document.getElementById('level1-owner-tabs-container')) {
+        console.log('Home page detected. Initializing home content.');
+        renderHomeRoomCards();
         
-        // Initialize Level 1 Owner specific UI if applicable
-        if (window.currentUserRole === '1') {
-            if (typeof initializeLevel1OwnerInterface === 'function') {
-                initializeLevel1OwnerInterface();
-            } else {
-                console.error('initializeLevel1OwnerInterface function not found. Make sure tenantManagement.js is loaded.');
-            }
-        } else {
-            // Hide L1 specific elements if user is not L1
-            const l1Tabs = document.getElementById('level1-owner-tabs-container');
-            if (l1Tabs) l1Tabs.classList.add('hidden');
-            const tenantManagementSection = document.getElementById('manage-tenants-content');
-            if (tenantManagementSection) tenantManagementSection.classList.add('hidden');
-            // Ensure default room content is visible for non-L1 if L1 tabs were planned
-             const myRoomsContent = document.getElementById('my-rooms-content');
-             if (myRoomsContent) myRoomsContent.classList.remove('hidden');
+        if (window.currentUserRole === '1' && typeof initializeLevel1OwnerInterface === 'function') {
+            initializeLevel1OwnerInterface();
         }
 
-        // Add event listeners for the 'Add Room' modal - permission check inside handler or here
-        // This button might be visible to Admin and Level 1 Owner
+        // Setup "Add Room" modal only if the button exists
         const addRoomBtn = document.getElementById('btn-add-room');
-        const closeAddRoomModalBtn = document.getElementById('close-add-room-modal');
-        const addRoomModal = document.getElementById('add-room-modal');
-        const addRoomForm = document.getElementById('add-room-form');
-
-        // Show/hide add room button based on permissions
         if (addRoomBtn) {
+            const closeAddRoomModalBtn = document.getElementById('close-add-room-modal');
+            const addRoomModal = document.getElementById('add-room-modal');
+            const addRoomForm = document.getElementById('add-room-form');
+
             if (hasPermission('canAddNewBills')) {
                 addRoomBtn.classList.remove('hidden');
                 addRoomBtn.addEventListener('click', () => openModal('add-room-modal'));
             } else {
                 addRoomBtn.classList.add('hidden');
             }
+            
+            if(closeAddRoomModalBtn) closeAddRoomModalBtn.addEventListener('click', () => closeModal('add-room-modal'));
+            if(addRoomForm) addRoomForm.addEventListener('submit', handleAddRoom);
         }
         
-        if(closeAddRoomModalBtn) closeAddRoomModalBtn.addEventListener('click', () => closeModal('add-room-modal'));
-        if(addRoomForm) addRoomForm.addEventListener('submit', handleAddRoom);
-        
-        // Initialize evidence modal listeners for home page - only for admin
-        if (hasPermission('canUploadEvidence')) {
-            setupEvidenceModalListeners();
-        }
-
-        // Add bulk data entry button for all rooms
+        // Setup bulk data entry button
         addBulkDataEntryButton();
 
     } else if (document.getElementById('history-section')) {
-        // This is the index.html page for a specific room
+        console.log('History page (index.html with ?room=) detected. Initializing history content.');
         const params = new URLSearchParams(window.location.search);
         const roomParam = params.get('room');
+
         if (roomParam) {
-            document.title = `ประวัติค่าไฟ - ห้อง ${roomParam}`;
+            const roomHeader = document.getElementById('room-header');
+            if(roomHeader) roomHeader.textContent = `ประวัติค่าไฟห้อง ${roomParam}`;
+            
             renderHistoryTable(roomParam);
             updatePreviousReadingFromDB(roomParam);
             
-            // Initialize evidence modal listeners - only for admin
             if (hasPermission('canUploadEvidence')) {
                 setupEvidenceModalListeners();
             }
-        } else {
-            // Handle case where room is not specified
-            const historySection = document.getElementById('history-section');
-            if (historySection) {
-                 historySection.innerHTML = `<p class="text-center text-red-400">ไม่พบข้อมูลห้อง</p>`;
+
+            // Add event listeners for the calculation form
+            const calcButton = document.querySelector('button[onclick="calculateBill()"]');
+            if (calcButton) {
+                // The onclick is already there, but if we wanted to add more logic:
+                // calcButton.addEventListener('click', calculateBill);
             }
+            
+            // Date picker initialization
+            if (typeof flatpickr !== 'undefined') {
+                const commonOptions = {
+                    dateFormat: "d/m/Y",
+                    locale: {
+                        firstDayOfWeek: 1 // Monday
+                    },
+                    "disable": [
+                        function(date) {
+                            // return true to disable
+                            return (date.getDay() === 0 || date.getDay() === 6);
+                        }
+                    ],
+                    onChange: function(selectedDates, dateStr, instance) {
+                        if (instance.element.id.startsWith('edit-')) {
+                            calculateEditTotals();
+                        }
+                    }
+                };
+
+                // Check for each date input before initializing
+                if(document.getElementById('bill-date')) {
+                    flatpickr("#bill-date", {...commonOptions});
+                }
+                if(document.getElementById('due-date')) {
+                    flatpickr("#due-date", {...commonOptions});
+                }
+                if(document.getElementById('edit-date')) {
+                    flatpickr("#edit-date", {...commonOptions});
+                }
+                if(document.getElementById('edit-due-date')) {
+                    flatpickr("#edit-due-date", {...commonOptions});
+                }
+            }
+
+        } else {
+            console.warn('History section found, but no room parameter in URL.');
+            const historySection = document.getElementById('history-section');
+            if(historySection) historySection.innerHTML = '<p class="text-center text-yellow-400">กรุณาระบุห้องที่ต้องการดูประวัติใน URL (เช่น ?room=101)</p>';
         }
+    } else {
+        console.log('No specific page content detected (e.g., login, profile). No special initialization needed.');
     }
 }
 
@@ -909,14 +949,31 @@ function updatePagination(totalItems, totalPages) {
 
 async function updatePreviousReadingFromDB(room) {
     if (!room) return;
-    const bills = await loadFromFirebase(room);
+
     const previousReadingInput = document.getElementById('previous-reading');
-    if (previousReadingInput) {
-        previousReadingInput.value = bills.length > 0 ? bills[0].current : '';
-    }
     const previousWaterReadingInput = document.getElementById('previous-water-reading');
-    if (previousWaterReadingInput) {
-        previousWaterReadingInput.value = bills.length > 0 && bills[0].currentWater ? bills[0].currentWater : '';
+    
+    // Only proceed if we are on a page with these inputs
+    if (!previousReadingInput || !previousWaterReadingInput) {
+        console.log('Previous reading inputs not found, skipping update.');
+        return;
+    }
+
+    try {
+        const bills = await loadFromFirebase(room);
+        // Sort by date descending to get the latest bill first
+        bills.sort((a, b) => new Date(b.date.split('/').reverse().join('-')) - new Date(a.date.split('/').reverse().join('-')));
+        
+        if (previousReadingInput) {
+            previousReadingInput.value = bills.length > 0 ? bills[0].current : '';
+        }
+        if (previousWaterReadingInput) {
+            previousWaterReadingInput.value = bills.length > 0 && bills[0].currentWater ? bills[0].currentWater : '0';
+        }
+    } catch (error) {
+        console.error(`Error updating previous reading for room ${room}:`, error);
+        if (previousReadingInput) previousReadingInput.value = '';
+        if (previousWaterReadingInput) previousWaterReadingInput.value = '0';
     }
 }
 
@@ -1189,13 +1246,6 @@ function openDeleteConfirmModal(key) {
         console.error("Error fetching bill data for delete confirmation:", error);
         showAlert('เกิดข้อผิดพลาดในการตรวจสอบสิทธิ์การลบ', 'error');
     });
-}
-
-function closeDeleteConfirmModal() {
-    keyToDelete = null;
-    const modal = document.getElementById('delete-confirm-modal');
-    modal.classList.remove('hidden');
-    modal.classList.add('flex');
 }
 
 function closeDeleteConfirmModal() {
@@ -1841,6 +1891,12 @@ function clearEvidenceSelection() {
 
 function setupEvidenceModalListeners() {
     console.log('=== Setting up evidence modal listeners ===');
+    
+    const evidenceModal = document.getElementById('evidence-modal');
+    if (!evidenceModal) {
+        console.warn('Evidence modal not found on this page. Aborting listener setup.');
+        return;
+    }
     
     const fileInput = document.getElementById('evidence-image-input');
     const cameraInput = document.getElementById('evidence-camera-input');
