@@ -798,6 +798,8 @@ function openEvidenceModal(key) {
     const saveBtn = document.getElementById('evidence-save-btn');
     const fileInput = document.getElementById('evidence-image-input');
     const cameraInput = document.getElementById('evidence-camera-input');
+    const progressContainer = document.getElementById('upload-progress-container');
+    const uploadStatus = document.getElementById('upload-status');
     
     console.log('Modal elements found:', {
         preview: !!preview,
@@ -805,16 +807,42 @@ function openEvidenceModal(key) {
         errorMsg: !!errorMsg,
         saveBtn: !!saveBtn,
         fileInput: !!fileInput,
-        cameraInput: !!cameraInput
+        cameraInput: !!cameraInput,
+        progressContainer: !!progressContainer,
+        uploadStatus: !!uploadStatus
     });
     
-    fileInput.value = '';
-    cameraInput.value = '';
-    preview.innerHTML = '';
-    preview.classList.add('hidden');
-    placeholder.classList.remove('hidden');
-    errorMsg.textContent = '';
-    saveBtn.disabled = true;
+    // Clear file inputs
+    if (fileInput) fileInput.value = '';
+    if (cameraInput) cameraInput.value = '';
+    
+    // Clear preview and show placeholder
+    if (preview) {
+        preview.innerHTML = '';
+        preview.classList.add('hidden');
+    }
+    if (placeholder) {
+        placeholder.classList.remove('hidden');
+    }
+    
+    // Reset save button
+    if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<i class="fas fa-save"></i> บันทึก';
+    }
+    
+    // Clear error message
+    if (errorMsg) {
+        errorMsg.textContent = '';
+    }
+    
+    // Hide progress indicators
+    if (progressContainer) {
+        progressContainer.classList.add('hidden');
+    }
+    if (uploadStatus) {
+        uploadStatus.classList.add('hidden');
+    }
 
     const modal = document.getElementById('evidence-modal');
     console.log('Modal element found:', !!modal);
@@ -902,11 +930,15 @@ async function handleEvidenceUpload() {
     console.log('Selected file:', file);
     console.log('keyForEvidence:', keyForEvidence);
     
-    if (!file || !keyForEvidence) {
-        console.error('Missing file or keyForEvidence');
-        console.log('File exists:', !!file);
-        console.log('keyForEvidence exists:', !!keyForEvidence);
-        showAlert('กรุณาเลือกไฟล์และตรวจสอบสิทธิ์การเข้าถึง', 'error');
+    if (!file) {
+        console.error('No file selected');
+        showAlert('กรุณาเลือกไฟล์รูปภาพก่อน', 'error');
+        return;
+    }
+    
+    if (!keyForEvidence) {
+        console.error('No keyForEvidence');
+        showAlert('เกิดข้อผิดพลาด: ไม่พบข้อมูลที่ต้องการแนบหลักฐาน', 'error');
         return;
     }
 
@@ -1200,20 +1232,64 @@ function handleFileSelect(file) {
 }
 
 function clearEvidenceSelection() {
-    const fileInput = document.getElementById('evidence-image-input');
-    const cameraInput = document.getElementById('evidence-camera-input');
+    console.log('=== clearEvidenceSelection started ===');
+    
     const preview = document.getElementById('evidence-preview');
     const placeholder = document.getElementById('evidence-placeholder');
     const saveBtn = document.getElementById('evidence-save-btn');
     const errorMsg = document.getElementById('evidence-error');
+    const fileInput = document.getElementById('evidence-image-input');
+    const cameraInput = document.getElementById('evidence-camera-input');
+    const progressContainer = document.getElementById('upload-progress-container');
+    const uploadStatus = document.getElementById('upload-status');
     
-    fileInput.value = '';
-    cameraInput.value = '';
-    preview.innerHTML = '';
-    preview.classList.add('hidden');
-    placeholder.classList.remove('hidden');
-    saveBtn.disabled = true;
-    errorMsg.textContent = '';
+    console.log('UI elements found:', {
+        preview: !!preview,
+        placeholder: !!placeholder,
+        saveBtn: !!saveBtn,
+        errorMsg: !!errorMsg,
+        fileInput: !!fileInput,
+        cameraInput: !!cameraInput,
+        progressContainer: !!progressContainer,
+        uploadStatus: !!uploadStatus
+    });
+    
+    // Clear file inputs
+    if (fileInput) fileInput.value = '';
+    if (cameraInput) cameraInput.value = '';
+    
+    // Clear preview
+    if (preview) {
+        preview.innerHTML = '';
+        preview.classList.add('hidden');
+    }
+    
+    // Show placeholder
+    if (placeholder) {
+        placeholder.classList.remove('hidden');
+    }
+    
+    // Reset save button
+    if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<i class="fas fa-save"></i> บันทึก';
+    }
+    
+    // Clear error message
+    if (errorMsg) {
+        errorMsg.textContent = '';
+    }
+    
+    // Hide progress indicators
+    if (progressContainer) {
+        progressContainer.classList.add('hidden');
+    }
+    if (uploadStatus) {
+        uploadStatus.classList.add('hidden');
+    }
+    
+    console.log('Evidence selection cleared');
+    console.log('=== clearEvidenceSelection ended ===');
 }
 
 function setupEvidenceModalListeners() {
