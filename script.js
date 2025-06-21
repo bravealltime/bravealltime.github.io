@@ -121,10 +121,17 @@ async function renderHomeRoomCards() {
             const dueDateInfo = getDueDateInfo(room.dueDate);
 
             return `
-            <div class="bg-slate-800 rounded-2xl shadow-lg p-5 flex flex-col justify-between hover:bg-slate-700/50 transition-all border border-slate-700 hover:border-blue-500 cursor-pointer" onclick="viewRoomHistory('${room.room}')">
+            <div class="bg-slate-800 rounded-2xl shadow-lg p-5 flex flex-col justify-between hover:bg-slate-700/50 transition-all border border-slate-700 hover:border-blue-500">
                 <div>
                     <div class="flex justify-between items-start">
-                        <span class="text-3xl font-bold text-blue-400">${room.room}</span>
+                        <div class="flex items-center gap-2">
+                            <span class="text-3xl font-bold text-blue-400">${room.room}</span>
+                            ${hasPermission('canEditAllBills') ? 
+                                `<button onclick="openEditRoomNameModal('${room.room}', '${room.name || ''}')" class="text-yellow-400 hover:text-yellow-300 transition-colors" title="แก้ไขชื่อห้อง">
+                                    <i class="fas fa-edit text-sm"></i>
+                                </button>` : ''
+                            }
+                        </div>
                         <div class="text-xs text-gray-400 text-right">
                             <span>อัปเดตล่าสุด</span><br>
                             <span>${room.date}</span>
@@ -163,6 +170,16 @@ async function renderHomeRoomCards() {
                         <span class="text-sm font-medium">${dueDateInfo.text}</span>
                     </div>
                 </div>` : ''}
+                <div class="mt-4 pt-4 border-t border-slate-700 flex gap-2">
+                    <button onclick="viewRoomHistory('${room.room}')" class="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-sm transition-all flex items-center justify-center gap-1">
+                        <i class="fas fa-history"></i> ประวัติ
+                    </button>
+                    ${hasPermission('canDeleteBills') ? 
+                        `<button onclick="openDeleteRoomConfirmModal('${room.room}')" class="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium text-sm transition-all flex items-center justify-center" title="ลบห้อง">
+                            <i class="fas fa-trash"></i>
+                        </button>` : ''
+                    }
+                </div>
             </div>
         `}).join('');
 
@@ -1830,4 +1847,197 @@ async function deleteEvidence(key) {
     }
     
     console.log('=== deleteEvidence ended ===');
+}
+
+// Room management functions
+function openEditRoomNameModal(roomNumber, currentName) {
+    if (!hasPermission('canEditAllBills')) {
+        showAlert('คุณไม่มีสิทธิ์แก้ไขข้อมูล', 'error');
+        return;
+    }
+    
+    // Create modal if it doesn't exist
+    let modal = document.getElementById('edit-room-name-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'edit-room-name-modal';
+        modal.className = 'fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50';
+        modal.innerHTML = `
+            <div class="bg-slate-800 border border-slate-700 rounded-2xl p-6 w-full max-w-md mx-4 shadow-lg">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold text-white">แก้ไขชื่อห้อง</h2>
+                    <button class="text-2xl text-slate-400 hover:text-white transition-colors" onclick="closeEditRoomNameModal()">&times;</button>
+                </div>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-300 mb-2">เลขห้อง</label>
+                        <input type="text" id="edit-room-number" readonly class="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white cursor-not-allowed">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-300 mb-2">ชื่อผู้เช่า</label>
+                        <input type="text" id="edit-room-name-input" class="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition text-white" placeholder="กรอกชื่อผู้เช่า">
+                    </div>
+                </div>
+                <div class="flex gap-3 mt-6">
+                    <button onclick="closeEditRoomNameModal()" class="flex-1 px-4 py-2 bg-slate-600 hover:bg-slate-500 text-white rounded-lg font-medium transition-colors">
+                        ยกเลิก
+                    </button>
+                    <button onclick="saveRoomNameEdit()" class="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors">
+                        บันทึก
+                    </button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    }
+    
+    // Populate form
+    document.getElementById('edit-room-number').value = roomNumber;
+    document.getElementById('edit-room-name-input').value = currentName;
+    
+    // Show modal
+    modal.classList.remove('hidden');
+}
+
+function closeEditRoomNameModal() {
+    const modal = document.getElementById('edit-room-name-modal');
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+}
+
+async function saveRoomNameEdit() {
+    if (!hasPermission('canEditAllBills')) {
+        showAlert('คุณไม่มีสิทธิ์แก้ไขข้อมูล', 'error');
+        return;
+    }
+    
+    const roomNumber = document.getElementById('edit-room-number').value;
+    const newName = document.getElementById('edit-room-name-input').value.trim();
+    
+    if (!newName) {
+        showAlert('กรุณากรอกชื่อผู้เช่า', 'error');
+        return;
+    }
+    
+    try {
+        // Get all bills for this room
+        const bills = await loadFromFirebase();
+        const roomBills = bills.filter(bill => bill.room === roomNumber);
+        
+        if (roomBills.length === 0) {
+            showAlert('ไม่พบข้อมูลห้องนี้', 'error');
+            return;
+        }
+        
+        // Update all bills for this room with new name
+        const updates = {};
+        roomBills.forEach(bill => {
+            updates[`/${bill.key}/name`] = newName;
+        });
+        
+        await db.ref('electricityData').update(updates);
+        
+        showAlert('แก้ไขชื่อห้องเรียบร้อยแล้ว', 'success');
+        closeEditRoomNameModal();
+        
+        // Refresh room cards
+        renderHomeRoomCards();
+        
+    } catch (error) {
+        console.error('Error updating room name:', error);
+        showAlert('เกิดข้อผิดพลาดในการแก้ไขชื่อห้อง', 'error');
+    }
+}
+
+function openDeleteRoomConfirmModal(roomNumber) {
+    if (!hasPermission('canDeleteBills')) {
+        showAlert('คุณไม่มีสิทธิ์ลบข้อมูล', 'error');
+        return;
+    }
+    
+    // Create modal if it doesn't exist
+    let modal = document.getElementById('delete-room-confirm-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'delete-room-confirm-modal';
+        modal.className = 'fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50';
+        modal.innerHTML = `
+            <div class="bg-slate-800 border border-slate-700 rounded-2xl p-6 w-full max-w-md mx-4 shadow-lg text-center">
+                <div class="text-red-500 mb-4">
+                    <i class="fas fa-exclamation-triangle fa-3x"></i>
+                </div>
+                <h2 class="text-xl font-bold text-white mb-2">ยืนยันการลบห้อง</h2>
+                <p class="text-slate-400 mb-4">คุณแน่ใจหรือไม่ว่าต้องการลบห้อง <span id="delete-room-number" class="font-bold text-white"></span> และข้อมูลทั้งหมดที่เกี่ยวข้อง?</p>
+                <p class="text-red-400 text-sm mb-6">การกระทำนี้ไม่สามารถย้อนกลับได้</p>
+                <div class="flex justify-center gap-4">
+                    <button onclick="closeDeleteRoomConfirmModal()" class="px-6 py-2 bg-slate-600 hover:bg-slate-500 text-white rounded-lg font-medium transition-colors">
+                        ยกเลิก
+                    </button>
+                    <button onclick="confirmDeleteRoom()" class="px-6 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors">
+                        ยืนยันการลบ
+                    </button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    }
+    
+    // Set room number
+    document.getElementById('delete-room-number').textContent = roomNumber;
+    
+    // Store room number for deletion
+    window.roomToDelete = roomNumber;
+    
+    // Show modal
+    modal.classList.remove('hidden');
+}
+
+function closeDeleteRoomConfirmModal() {
+    const modal = document.getElementById('delete-room-confirm-modal');
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+    window.roomToDelete = null;
+}
+
+async function confirmDeleteRoom() {
+    if (!hasPermission('canDeleteBills')) {
+        showAlert('คุณไม่มีสิทธิ์ลบข้อมูล', 'error');
+        return;
+    }
+    
+    const roomNumber = window.roomToDelete;
+    if (!roomNumber) {
+        showAlert('ไม่พบข้อมูลห้องที่ต้องการลบ', 'error');
+        return;
+    }
+    
+    try {
+        // Get all bills for this room
+        const bills = await loadFromFirebase();
+        const roomBills = bills.filter(bill => bill.room === roomNumber);
+        
+        if (roomBills.length === 0) {
+            showAlert('ไม่พบข้อมูลห้องนี้', 'error');
+            return;
+        }
+        
+        // Delete all bills for this room
+        const deletePromises = roomBills.map(bill => 
+            db.ref(`electricityData/${bill.key}`).remove()
+        );
+        
+        await Promise.all(deletePromises);
+        
+        showAlert(`ลบห้อง ${roomNumber} และข้อมูลทั้งหมดเรียบร้อยแล้ว`, 'success');
+        closeDeleteRoomConfirmModal();
+        
+        // Refresh room cards
+        renderHomeRoomCards();
+        
+    } catch (error) {
+        console.error('Error deleting room:', error);
+        showAlert('เกิดข้อผิดพลาดในการลบห้อง', 'error');
+    }
 }
