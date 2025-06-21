@@ -203,24 +203,18 @@ async function renderHomeRoomCards() {
             }
 
             return `
-<<<<<<< HEAD
-            <div class="bg-slate-800 rounded-2xl shadow-lg p-5 flex flex-col justify-between hover:bg-slate-700/50 transition-all border border-slate-700 hover:border-blue-500 cursor-pointer" onclick="viewRoomHistory('${roomData.room}')">
-                <div>
-                    <div class="flex justify-between items-start">
-                        <span class="text-3xl font-bold text-blue-400">${roomData.room}</span>
-=======
+
             <div class="bg-slate-800 rounded-2xl shadow-lg p-5 flex flex-col justify-between hover:bg-slate-700/50 transition-all border border-slate-700 hover:border-blue-500">
                 <div>
                     <div class="flex justify-between items-start">
                         <div class="flex items-center gap-2">
-                            <span class="text-3xl font-bold text-blue-400">${room.room}</span>
+                            <span class="text-3xl font-bold text-blue-400">${roomData.room}</span>
                             ${hasPermission('canEditAllBills') ? 
-                                `<button onclick="openEditRoomNameModal('${room.room}', '${room.name || ''}')" class="text-yellow-400 hover:text-yellow-300 transition-colors" title="แก้ไขชื่อห้อง">
+                                `<button onclick="openEditRoomNameModal('${roomData.room}', '${roomData.name || ''}')" class="text-yellow-400 hover:text-yellow-300 transition-colors" title="แก้ไขชื่อห้อง">
                                     <i class="fas fa-edit text-sm"></i>
                                 </button>` : ''
                             }
                         </div>
->>>>>>> main
                         <div class="text-xs text-gray-400 text-right">
                             <span>อัปเดตล่าสุด</span><br>
                             <span>${roomData.date || 'N/A'}</span> {/* Added default for date */}
@@ -260,11 +254,11 @@ async function renderHomeRoomCards() {
                     </div>
                 </div>` : ''}
                 <div class="mt-4 pt-4 border-t border-slate-700 flex gap-2">
-                    <button onclick="viewRoomHistory('${room.room}')" class="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-sm transition-all flex items-center justify-center gap-1">
+                    <button onclick="viewRoomHistory('${roomData.room}')" class="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-sm transition-all flex items-center justify-center gap-1">
                         <i class="fas fa-history"></i> ประวัติ
                     </button>
                     ${hasPermission('canDeleteBills') ? 
-                        `<button onclick="openDeleteRoomConfirmModal('${room.room}')" class="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium text-sm transition-all flex items-center justify-center" title="ลบห้อง">
+                        `<button onclick="openDeleteRoomConfirmModal('${roomData.room}')" class="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium text-sm transition-all flex items-center justify-center" title="ลบห้อง">
                             <i class="fas fa-trash"></i>
                         </button>` : ''
                     }
