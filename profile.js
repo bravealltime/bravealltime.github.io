@@ -1,16 +1,12 @@
 /*
     This script handles the profile page functionality.
     It relies on auth.js for authentication, data fetching, and UI updates.
+    initializeProfilePage() is called by auth.js after authentication is complete.
 */
 
 // --- Initialization ---
-document.addEventListener('DOMContentLoaded', () => {
-    // auth.js handles the initial auth check via the 'requires-auth' class on the body.
-    // We just need to set up the page-specific listeners once the user is confirmed.
-    
-    // Add a delay to ensure auth.js has fetched user data
-    setTimeout(initializeProfilePage, 100); 
-});
+// The DOMContentLoaded listener has been removed to prevent race conditions.
+// auth.js will now call initializeProfilePage() directly.
 
 function initializeProfilePage() {
     const { currentUser, userData } = window.auth;

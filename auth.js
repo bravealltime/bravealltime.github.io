@@ -67,12 +67,18 @@ function checkAuth() {
                         name: userData.name || user.displayName,
                         photoURL: userData.photoURL || user.photoURL,
                         role: userData.role || 'user',
+                        createdAt: user.metadata.creationTime,
+                        metadata: { lastSignInTime: user.metadata.lastSignInTime },
                         ...userData // Add other db fields
                     };
                     
-                    // Force 'admin' role for specific email
+                    // Force 'admin' role and add demo data for specific email
                     if (user.email === 'admin@electricity.com') {
                         fullUser.role = 'admin';
+                        // Add demo data if it doesn't exist from DB
+                        if (!userData.name) fullUser.name = 'แอดมินทดสอบ';
+                        if (!userData.phone) fullUser.phone = '081-234-5678';
+                        if (!userData.address) fullUser.address = '123/456 ถนนพัฒนาการ กรุงเทพมหานคร 10250';
                     }
 
                     resolve(fullUser); // Resolve with the user object
@@ -388,6 +394,62 @@ function updateAuthUI(user) {
     }
 }
 
+// --- Profile Update Functions ---
+
+async function updateUserProfile(data) {
+    const user = auth.currentUser;
+    if (!user) throw new Error("ไม่พบผู้ใช้งาน");
+
+    const { displayName, ...customData } = data;
+
+    // Update Firebase Auth profile (for displayName)
+    if (displayName && displayName !== user.displayName) {
+        await user.updateProfile({ displayName });
+    }
+
+    // Update custom data in Realtime Database
+    await db.ref('users/' + user.uid).update(customData);
+}
+
+async function uploadProfilePhoto(file, onProgress) {
+    const user = auth.currentUser;
+    if (!user) throw new Error("ไม่พบผู้ใช้งาน");
+
+    const filePath = `profile_images/${user.uid}/${Date.now()}_${file.name}`;
+    const fileRef = storage.ref(filePath);
+    
+    const uploadTask = fileRef.put(file);
+
+    return new Promise((resolve, reject) => {
+        uploadTask.on('state_changed',
+            (snapshot) => {
+                const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                if (onProgress) onProgress(progress);
+            },
+            (error) => reject(error),
+            async () => {
+                const photoURL = await uploadTask.snapshot.ref.getDownloadURL();
+                // Save URL to user's db record and auth profile
+                await user.updateProfile({ photoURL });
+                await db.ref(`users/${user.uid}`).update({ photoURL });
+                resolve(photoURL);
+            }
+        );
+    });
+}
+
+async function updateUserPassword(currentPassword, newPassword) {
+    const user = auth.currentUser;
+    if (!user) throw new Error("กรุณาเข้าสู่ระบบก่อนเปลี่ยนรหัสผ่าน");
+
+    // Re-authenticate user before changing password
+    const credential = firebase.auth.EmailAuthProvider.credential(user.email, currentPassword);
+    await user.reauthenticateWithCredential(credential);
+
+    // If re-authentication is successful, update the password
+    await user.updatePassword(newPassword);
+}
+
 // Initialize authentication
 document.addEventListener('DOMContentLoaded', async function() {
     if (document.body.classList.contains('requires-auth')) {
@@ -395,10 +457,25 @@ document.addEventListener('DOMContentLoaded', async function() {
         window.currentUser = user; // Set global user object
 
         if (user) {
+            const userData = await getUserData(user.uid);
             window.currentUserRole = user.role; // Set global role for hasPermission()
+            
+            // This is for profile.js
+            window.auth = {
+                currentUser: user,
+                userData: userData,
+                updateUserProfile: updateUserProfile,
+                updateUserPassword: updateUserPassword,
+                uploadProfilePhoto: uploadProfilePhoto,
+            };
+
             updateAuthUI(user);
+            
             if(typeof initializePageContent === 'function') {
                 initializePageContent();
+            }
+            if(typeof initializeProfilePage === 'function') {
+                initializeProfilePage();
             }
         } else {
             window.location.href = 'login.html';
