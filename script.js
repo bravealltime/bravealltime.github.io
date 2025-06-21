@@ -224,7 +224,7 @@ async function renderHistoryTable(room) {
                             `<button onclick="openEvidenceModal('${bill.key}')" class="text-green-400 hover:text-green-300 transition-colors" title="แนบหลักฐาน"><i class="fas fa-upload"></i></button>` : ''
                         }
                         ${bill.evidenceUrl ? 
-                            `<button onclick="viewEvidence('${bill.evidenceUrl}', '${bill.evidenceFileName || 'หลักฐานการชำระเงิน'}')" class="text-blue-400 hover:text-blue-300 transition-colors" title="ดูหลักฐาน"><i class="fas fa-eye"></i></button>` : ''
+                            `<button onclick="viewEvidence('${bill.evidenceUrl}', '${bill.evidenceFileName ? bill.evidenceFileName : 'หลักฐานการชำระเงิน'}')" class="text-blue-400 hover:text-blue-300 transition-colors" title="ดูหลักฐาน"><i class="fas fa-eye"></i></button>` : ''
                         }
                         ${hasPermission('canUploadEvidence') && bill.evidenceUrl ? 
                             `<button onclick="deleteEvidence('${bill.key}')" class="text-orange-400 hover:text-orange-300 transition-colors" title="ลบหลักฐาน"><i class="fas fa-trash-alt"></i></button>` : ''
@@ -510,23 +510,20 @@ async function openEditModal(key) {
             return;
         }
 
-        // Populate form fields
-        document.getElementById('edit-room').value = data.room || '';
-        document.getElementById('edit-name').value = data.name || '';
+        // Populate form fields (only use ids that exist in index.html)
+        document.getElementById('edit-key').value = key;
         document.getElementById('edit-date').value = data.date || '';
+        document.getElementById('edit-due-date').value = data.dueDate || '';
         document.getElementById('edit-current').value = data.current || '';
         document.getElementById('edit-previous').value = data.previous || '';
         document.getElementById('edit-rate').value = data.rate || '';
-        document.getElementById('edit-total').value = data.total || '';
-        document.getElementById('edit-totalall').value = data.totalall || '';
-        document.getElementById('edit-due-date').value = data.dueDate || '';
+        document.getElementById('edit-total-all').value = data.totalAll || '';
         
         // Water fields
-        document.getElementById('edit-water-current').value = data.waterCurrent || '';
-        document.getElementById('edit-water-previous').value = data.waterPrevious || '';
+        document.getElementById('edit-current-water').value = data.currentWater || '';
+        document.getElementById('edit-previous-water').value = data.previousWater || '';
         document.getElementById('edit-water-rate').value = data.waterRate || '';
-        document.getElementById('edit-water-total').value = data.waterTotal || '';
-        document.getElementById('edit-water-totalall').value = data.waterTotalall || '';
+        document.getElementById('edit-total-water-bill-household').value = data.totalWaterBillHousehold || '';
 
         // Store the key for saving
         editingIndex = key;
@@ -557,52 +554,53 @@ async function saveEdit() {
     }
 
     try {
-        // Get form values
-        const room = document.getElementById('edit-room').value;
-        const name = document.getElementById('edit-name').value;
+        // Get form values (use correct ids from index.html)
+        const key = document.getElementById('edit-key').value;
         const date = document.getElementById('edit-date').value;
+        const dueDate = document.getElementById('edit-due-date').value;
         const current = parseFloat(document.getElementById('edit-current').value) || 0;
         const previous = parseFloat(document.getElementById('edit-previous').value) || 0;
         const rate = parseFloat(document.getElementById('edit-rate').value) || 0;
-        const total = parseFloat(document.getElementById('edit-total').value) || 0;
-        const totalall = parseFloat(document.getElementById('edit-totalall').value) || 0;
-        const dueDate = document.getElementById('edit-due-date').value;
+        const totalAll = parseFloat(document.getElementById('edit-total-all').value) || 0;
         
         // Water values
-        const waterCurrent = parseFloat(document.getElementById('edit-water-current').value) || 0;
-        const waterPrevious = parseFloat(document.getElementById('edit-water-previous').value) || 0;
+        const currentWater = parseFloat(document.getElementById('edit-current-water').value) || 0;
+        const previousWater = parseFloat(document.getElementById('edit-previous-water').value) || 0;
         const waterRate = parseFloat(document.getElementById('edit-water-rate').value) || 0;
-        const waterTotal = parseFloat(document.getElementById('edit-water-total').value) || 0;
-        const waterTotalall = parseFloat(document.getElementById('edit-water-totalall').value) || 0;
+        const totalWaterBillHousehold = parseFloat(document.getElementById('edit-total-water-bill-household').value) || 0;
 
         // Validate required fields
-        if (!room || !name || !date) {
+        if (!date || !dueDate) {
             showAlert('กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน', 'error');
             return;
         }
 
-        // Calculate units
+        // Calculate units and totals
         const units = current - previous;
-        const waterUnits = waterCurrent - waterPrevious;
+        const total = units * rate;
+        const waterUnits = currentWater - previousWater;
+        const waterTotal = waterUnits * waterRate;
+
+        // Get existing data to preserve room and name
+        const snapshot = await db.ref(`electricityData/${editingIndex}`).once('value');
+        const existingData = snapshot.val();
 
         // Prepare update data
         const updateData = {
-            room,
-            name,
             date,
+            dueDate,
             current,
             previous,
             units,
             rate,
             total,
-            totalall,
-            dueDate,
-            waterCurrent,
-            waterPrevious,
+            totalAll,
+            currentWater,
+            previousWater,
             waterUnits,
             waterRate,
             waterTotal,
-            waterTotalall,
+            totalWaterBillHousehold,
             updatedAt: new Date().toISOString(),
             updatedBy: auth.currentUser?.uid || 'unknown'
         };
@@ -791,18 +789,71 @@ function viewEvidence(url, fileName = 'หลักฐานการชำร�
         return;
     }
     
-    // Open evidence in new tab
-    try {
-        const newWindow = window.open(url, '_blank');
-        if (!newWindow) {
-            showAlert('ไม่สามารถเปิดหลักฐานได้ กรุณาตรวจสอบการตั้งค่า popup blocker', 'error');
-        }
-    } catch (error) {
-        console.error('Error opening evidence:', error);
-        showAlert('เกิดข้อผิดพลาดในการเปิดหลักฐาน', 'error');
+    // Show evidence in modal instead of new tab
+    const modal = document.getElementById('evidence-view-modal');
+    const container = document.getElementById('evidence-view-container');
+    const downloadBtn = document.getElementById('download-evidence-btn');
+    
+    if (!modal || !container) {
+        console.error('Evidence view modal elements not found');
+        showAlert('เกิดข้อผิดพลาดในการแสดงรูปภาพ', 'error');
+        return;
     }
     
+    // Clear previous content
+    container.innerHTML = '';
+    
+    // Create image element
+    const img = document.createElement('img');
+    img.src = url;
+    img.alt = fileName;
+    img.className = 'max-w-full max-h-[60vh] object-contain rounded-lg shadow-lg';
+    img.style.maxWidth = '100%';
+    img.style.height = 'auto';
+    
+    // Add loading state
+    img.onload = function() {
+        console.log('Image loaded successfully');
+    };
+    
+    img.onerror = function() {
+        console.error('Failed to load image');
+        container.innerHTML = `
+            <div class="text-center text-red-400">
+                <i class="fas fa-exclamation-triangle text-4xl mb-2"></i>
+                <p>ไม่สามารถโหลดรูปภาพได้</p>
+            </div>
+        `;
+    };
+    
+    // Add image to container
+    container.appendChild(img);
+    
+    // Set up download button
+    if (downloadBtn) {
+        downloadBtn.onclick = function() {
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = fileName || 'evidence.jpg';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        };
+    }
+    
+    // Show modal
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+    
     console.log('=== viewEvidence ended ===');
+}
+
+function closeEvidenceViewModal() {
+    const modal = document.getElementById('evidence-view-modal');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+    }
 }
 
 function openEvidenceModal(key) {
@@ -956,12 +1007,35 @@ async function handleEvidenceUpload() {
     
     const fileInput = document.getElementById('evidence-image-input');
     const cameraInput = document.getElementById('evidence-camera-input');
-    const file = fileInput.files[0] || cameraInput.files[0];
+    
+    // Check both file inputs for selected files
+    let file = null;
+    if (fileInput && fileInput.files && fileInput.files.length > 0) {
+        file = fileInput.files[0];
+        console.log('File found in fileInput:', file.name);
+    } else if (cameraInput && cameraInput.files && cameraInput.files.length > 0) {
+        file = cameraInput.files[0];
+        console.log('File found in cameraInput:', file.name);
+    }
     
     console.log('File input:', fileInput);
     console.log('Camera input:', cameraInput);
     console.log('Selected file:', file);
     console.log('keyForEvidence:', keyForEvidence);
+    
+    // Additional debugging information
+    if (fileInput) {
+        console.log('FileInput files length:', fileInput.files.length);
+        if (fileInput.files.length > 0) {
+            console.log('FileInput first file:', fileInput.files[0].name);
+        }
+    }
+    if (cameraInput) {
+        console.log('CameraInput files length:', cameraInput.files.length);
+        if (cameraInput.files.length > 0) {
+            console.log('CameraInput first file:', cameraInput.files[0].name);
+        }
+    }
     
     if (!file) {
         console.error('No file selected');
@@ -1258,7 +1332,27 @@ function handleFileSelect(file) {
     
     preview.classList.remove('hidden');
     placeholder.classList.add('hidden');
+    
+    // Enable save button and show success message
     saveBtn.disabled = false;
+    saveBtn.innerHTML = '<i class="fas fa-save"></i> บันทึก';
+    console.log('Save button enabled:', !saveBtn.disabled);
+    
+    // Double-check that the file is properly assigned to the input
+    const fileInput = document.getElementById('evidence-image-input');
+    const cameraInput = document.getElementById('evidence-camera-input');
+    
+    if (fileInput && fileInput.files && fileInput.files.length === 0) {
+        // If file input is empty, try to assign the file
+        try {
+            const dataTransfer = new DataTransfer();
+            dataTransfer.items.add(file);
+            fileInput.files = dataTransfer.files;
+            console.log('File reassigned to fileInput:', fileInput.files.length);
+        } catch (error) {
+            console.error('Error reassigning file to input:', error);
+        }
+    }
     
     console.log('Preview created successfully');
     console.log('=== handleFileSelect ended ===');
@@ -1420,7 +1514,18 @@ function setupEvidenceModalListeners() {
             const files = e.dataTransfer.files;
             console.log('Files dropped:', files.length);
             if (files.length) {
-                handleFileSelect(files[0]);
+                // Create a new FileList-like object and assign to file input
+                const file = files[0];
+                
+                // Create a new DataTransfer object
+                const dataTransfer = new DataTransfer();
+                dataTransfer.items.add(file);
+                
+                // Assign the file to the file input
+                fileInput.files = dataTransfer.files;
+                
+                console.log('File assigned to input:', fileInput.files.length);
+                handleFileSelect(file);
             }
         });
         console.log('Drag and drop listeners added');
