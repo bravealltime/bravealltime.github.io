@@ -3216,6 +3216,7 @@ document.addEventListener('DOMContentLoaded', function() {
             img.src = e.target.result;
             img.className = 'max-h-48 rounded-lg object-contain mx-auto';
             previewContainer.appendChild(img);
+            previewContainer.classList.remove('hidden');
         };
         reader.readAsDataURL(file);
     }
