@@ -167,19 +167,18 @@
             authDomain: "electricity-bill-calcula-ea4a2.firebaseapp.com",
             databaseURL: "https://electricity-bill-calcula-ea4a2-default-rtdb.asia-southeast1.firebasedatabase.app",
             projectId: "electricity-bill-calcula-ea4a2",
-            storageBucket: "electricity-bill-calcula-ea4a2.appspot.com",
+            storageBucket: "electricity-bill-calcula-ea4a2.firebasestorage.app",
             messagingSenderId: "79440126022",
             appId: "1:79440126022:web:7ffbc16c6661bc75dc6a47",
             measurementId: "G-7JD6H3Q0PM"
         };
-        let db, auth, storage; // Make them available globally for other scripts
+        let db, auth;
         try {
             if (!firebase.apps.length) {
                 firebase.initializeApp(firebaseConfig);
             }
             db = firebase.database();
             auth = firebase.auth();
-            storage = firebase.storage();
         } catch (error) {
             console.error('Firebase initialization error:', error);
         }

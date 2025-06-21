@@ -8,6 +8,8 @@ const ITEMS_PER_PAGE = 5;
 let currentPage = 1;
 let editingIndex = -1;
 let allHistoryData = []; // This will hold all data for the current room, for sorting
+let keyForEvidence = null; // For evidence upload modal
+let keyToDelete = null; // For delete confirmation modal
 
 // --- Authentication & Initialization ---
 
@@ -33,15 +35,30 @@ function initializePageContent() {
     // Route to the correct function based on the current page
     if (document.getElementById('home-room-cards')) {
         renderHomeRoomCards();
-        // Add event listeners for the 'Add Room' modal
+        
+        // Add event listeners for the 'Add Room' modal - only for admin
         const addRoomBtn = document.getElementById('btn-add-room');
         const closeAddRoomModalBtn = document.getElementById('close-add-room-modal');
         const addRoomModal = document.getElementById('add-room-modal');
         const addRoomForm = document.getElementById('add-room-form');
 
-        if(addRoomBtn) addRoomBtn.addEventListener('click', () => addRoomModal.classList.remove('hidden'));
+        // Show/hide add room button based on permissions
+        if (addRoomBtn) {
+            if (hasPermission('canAddNewBills')) {
+                addRoomBtn.classList.remove('hidden');
+                addRoomBtn.addEventListener('click', () => addRoomModal.classList.remove('hidden'));
+            } else {
+                addRoomBtn.classList.add('hidden');
+            }
+        }
+        
         if(closeAddRoomModalBtn) closeAddRoomModalBtn.addEventListener('click', () => addRoomModal.classList.add('hidden'));
         if(addRoomForm) addRoomForm.addEventListener('submit', handleAddRoom);
+        
+        // Initialize evidence modal listeners for home page - only for admin
+        if (hasPermission('canUploadEvidence')) {
+            setupEvidenceModalListeners();
+        }
 
     } else if (document.getElementById('history-section')) {
         // This is the index.html page for a specific room
@@ -51,7 +68,11 @@ function initializePageContent() {
             document.title = `ประวัติค่าไฟ - ห้อง ${roomParam}`;
             renderHistoryTable(roomParam);
             updatePreviousReadingFromDB(roomParam);
-            setupEvidenceModalListeners(); // Initialize listeners
+            
+            // Initialize evidence modal listeners - only for admin
+            if (hasPermission('canUploadEvidence')) {
+                setupEvidenceModalListeners();
+            }
         } else {
             // Handle case where room is not specified
             const historySection = document.getElementById('history-section');
@@ -121,6 +142,16 @@ async function renderHomeRoomCards() {
                         <span class="text-white font-semibold">${Number(room.rate || 0).toFixed(2)} ฿</span>
                     </div>
                 </div>
+                <div class="mt-4 pt-4 border-t border-slate-700 space-y-2">
+                    <div class="flex justify-between items-center text-sm">
+                        <span class="text-gray-400">ค่าน้ำ (หน่วย):</span>
+                        <span class="text-cyan-400 font-semibold">${room.waterUnits || '-'} หน่วย</span>
+                    </div>
+                    <div class="flex justify-between items-center text-sm">
+                        <span class="text-gray-400">ค่าน้ำ (บาท):</span>
+                        <span class="text-sky-400 font-semibold">฿${Number(room.waterTotal || 0).toLocaleString()}</span>
+                    </div>
+                </div>
                  <div class="mt-4 pt-4 border-t border-slate-700 text-center">
                     <p class="text-sm text-gray-300">ค่าไฟล่าสุด</p>
                     <p class="text-4xl font-bold ${amountColor}">฿${totalAmount.toLocaleString()}</p>
@@ -186,13 +217,21 @@ async function renderHistoryTable(room) {
 
                 <td class="py-3 px-3 text-center">
                     <div class="flex items-center justify-center gap-3">
-                        <button onclick='generateQRCode(${JSON.stringify(bill)})' class="text-purple-400 hover:text-purple-300 transition-colors" title="สร้าง QR Code ชำระเงิน"><i class="fas fa-qrcode"></i></button>
-                        ${bill.evidenceUrl ?
-                            `<a href="${bill.evidenceUrl}" target="_blank" class="text-blue-400 hover:text-blue-300 transition-colors" title="ดูหลักฐาน"><i class="fas fa-eye"></i></a>` :
-                            `<button onclick="openEvidenceModal('${bill.key}')" class="text-blue-400 hover:text-blue-300 transition-colors" title="แนบหลักฐาน"><i class="fas fa-eye"></i></button>`
+                        ${hasPermission('canGenerateQRCode') ? 
+                            `<button onclick='generateQRCode(${JSON.stringify(bill)})' class="text-purple-400 hover:text-purple-300 transition-colors" title="สร้าง QR Code ชำระเงิน"><i class="fas fa-qrcode"></i></button>` : ''
                         }
-                        <button onclick="openEditModal('${bill.key}')" class="text-blue-400 hover:text-blue-300 transition-colors" title="แก้ไข"><i class="fas fa-edit"></i></button>
-                        <button onclick="openDeleteConfirmModal('${bill.key}')" class="text-red-400 hover:text-red-300 transition-colors" title="ลบ"><i class="fas fa-trash"></i></button>
+                        ${hasPermission('canUploadEvidence') ? 
+                            (bill.evidenceUrl ?
+                                `<a href="${bill.evidenceUrl}" target="_blank" class="text-blue-400 hover:text-blue-300 transition-colors" title="ดูหลักฐาน"><i class="fas fa-eye"></i></a>` :
+                                `<button onclick="openEvidenceModal('${bill.key}')" class="text-blue-400 hover:text-blue-300 transition-colors" title="แนบหลักฐาน"><i class="fas fa-eye"></i></button>`
+                            ) : ''
+                        }
+                        ${hasPermission('canEditAllBills') ? 
+                            `<button onclick="openEditModal('${bill.key}')" class="text-blue-400 hover:text-blue-300 transition-colors" title="แก้ไข"><i class="fas fa-edit"></i></button>` : ''
+                        }
+                        ${hasPermission('canDeleteBills') ? 
+                            `<button onclick="openDeleteConfirmModal('${bill.key}')" class="text-red-400 hover:text-red-300 transition-colors" title="ลบ"><i class="fas fa-trash"></i></button>` : ''
+                        }
                     </div>
                 </td>
             </tr>
@@ -266,37 +305,88 @@ async function deleteBill(key) {
 
 async function handleAddRoom(event) {
     event.preventDefault();
-    const room = document.getElementById('add-room-room').value;
-    const name = document.getElementById('add-room-name').value;
-    const date = document.getElementById('add-room-date').value;
-    const current = parseFloat(document.getElementById('add-room-current').value);
-    const previous = parseFloat(document.getElementById('add-room-previous').value);
-    const rate = parseFloat(document.getElementById('add-room-rate').value);
-    const totalAll = parseFloat(document.getElementById('add-room-totalall').value) || 0;
-
-    if (!room || !name || !date || isNaN(current) || isNaN(previous) || isNaN(rate)) {
-        showAlert('กรุณากรอกข้อมูลให้ครบถ้วน', 'error');
+    
+    if (!hasPermission('canAddNewBills')) {
+        showAlert('คุณไม่มีสิทธิ์เพิ่มข้อมูลใหม่', 'error');
         return;
     }
 
-    const units = current - previous;
-    const total = units * rate;
+    try {
+        // Get form values
+        const room = document.getElementById('add-room-room').value.trim();
+        const name = document.getElementById('add-room-name').value.trim();
+        const date = document.getElementById('add-room-date').value.trim();
+        const current = parseFloat(document.getElementById('add-room-current').value) || 0;
+        const previous = parseFloat(document.getElementById('add-room-previous').value) || 0;
+        const rate = parseFloat(document.getElementById('add-room-rate').value) || 0;
+        const totalall = parseFloat(document.getElementById('add-room-totalall').value) || 0;
+        
+        // Water values
+        const waterCurrent = parseFloat(document.getElementById('add-room-water-current').value) || 0;
+        const waterPrevious = parseFloat(document.getElementById('add-room-water-previous').value) || 0;
+        const waterRate = parseFloat(document.getElementById('add-room-water-rate').value) || 0;
+        const waterTotalall = parseFloat(document.getElementById('add-room-water-totalall').value) || 0;
 
-    const newBill = {
-        room, name, date, current, previous, rate, totalAll, units, total,
-        timestamp: new Date().toISOString()
-    };
+        // Validate required fields
+        if (!room || !name || !date) {
+            showAlert('กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน', 'error');
+            return;
+        }
 
-    await saveToFirebase(newBill);
-    showAlert('สร้างห้องและบันทึกข้อมูลแรกเรียบร้อย', 'success');
-    
-    const addRoomModal = document.getElementById('add-room-modal');
-    if (addRoomModal) addRoomModal.classList.add('hidden');
-    
-    const addRoomForm = document.getElementById('add-room-form');
-    if (addRoomForm) addRoomForm.reset();
-    
-    renderHomeRoomCards();
+        if (current < previous) {
+            showAlert('ค่ามิเตอร์ไฟฟ้าปัจจุบันต้องไม่น้อยกว่าครั้งที่แล้ว', 'error');
+            return;
+        }
+
+        if (waterCurrent < waterPrevious) {
+            showAlert('ค่ามิเตอร์น้ำปัจจุบันต้องไม่น้อยกว่าครั้งที่แล้ว', 'error');
+            return;
+        }
+
+        // Calculate units and totals
+        const units = current - previous;
+        const total = units * rate;
+        const waterUnits = waterCurrent - waterPrevious;
+        const waterTotal = waterUnits * waterRate;
+
+        // Prepare data
+        const newBill = {
+            room,
+            name,
+            date,
+            current,
+            previous,
+            units,
+            rate,
+            total,
+            totalall,
+            waterCurrent,
+            waterPrevious,
+            waterUnits,
+            waterRate,
+            waterTotal,
+            waterTotalall,
+            createdAt: new Date().toISOString(),
+            createdBy: auth.currentUser?.uid || 'unknown'
+        };
+
+        // Save to Firebase
+        const newRef = await db.ref('electricityData').push(newBill);
+        
+        showAlert('เพิ่มข้อมูลห้องใหม่เรียบร้อยแล้ว', 'success');
+
+        // Close modal and reset form
+        const modal = document.getElementById('add-room-modal');
+        modal.classList.add('hidden');
+        document.getElementById('add-room-form').reset();
+
+        // Refresh room cards
+        renderHomeRoomCards();
+
+    } catch (error) {
+        console.error('Error adding room:', error);
+        showAlert('เกิดข้อผิดพลาดในการเพิ่มข้อมูล', 'error');
+    }
 }
 
 async function calculateBill() {
@@ -408,34 +498,47 @@ async function openEditModal(key) {
         showAlert('คุณไม่มีสิทธิ์แก้ไขข้อมูล', 'error');
         return;
     }
-    const bills = await loadFromFirebase();
-    const billToEdit = bills.find(b => b.key === key);
+    
+    try {
+        const snapshot = await db.ref(`electricityData/${key}`).once('value');
+        const data = snapshot.val();
+        if (!data) {
+            showAlert('ไม่พบข้อมูลที่ต้องการแก้ไข', 'error');
+            return;
+        }
 
-    if (billToEdit) {
-        document.getElementById('edit-key').value = key;
-        document.getElementById('edit-date').value = billToEdit.date;
-        document.getElementById('edit-due-date').value = billToEdit.dueDate || '';
-        document.getElementById('edit-current').value = billToEdit.current;
-        document.getElementById('edit-previous').value = billToEdit.previous;
-        document.getElementById('edit-total-all').value = billToEdit.totalAll || 0;
+        // Populate form fields
+        document.getElementById('edit-room').value = data.room || '';
+        document.getElementById('edit-name').value = data.name || '';
+        document.getElementById('edit-date').value = data.date || '';
+        document.getElementById('edit-current').value = data.current || '';
+        document.getElementById('edit-previous').value = data.previous || '';
+        document.getElementById('edit-rate').value = data.rate || '';
+        document.getElementById('edit-total').value = data.total || '';
+        document.getElementById('edit-totalall').value = data.totalall || '';
+        document.getElementById('edit-due-date').value = data.dueDate || '';
         
-        const editRateInput = document.getElementById('edit-rate');
-        editRateInput.value = (billToEdit.rate || 0).toFixed(4);
+        // Water fields
+        document.getElementById('edit-water-current').value = data.waterCurrent || '';
+        document.getElementById('edit-water-previous').value = data.waterPrevious || '';
+        document.getElementById('edit-water-rate').value = data.waterRate || '';
+        document.getElementById('edit-water-total').value = data.waterTotal || '';
+        document.getElementById('edit-water-totalall').value = data.waterTotalall || '';
 
-        // Populate water fields if they exist in the modal and billToEdit
-        const editCurrentWater = document.getElementById('edit-current-water');
-        const editPreviousWater = document.getElementById('edit-previous-water');
-        const editTotalWaterBillHousehold = document.getElementById('edit-total-water-bill-household');
-        const editWaterRate = document.getElementById('edit-water-rate');
+        // Store the key for saving
+        editingIndex = key;
 
-        if (editCurrentWater) editCurrentWater.value = billToEdit.currentWater || '';
-        if (editPreviousWater) editPreviousWater.value = billToEdit.previousWater || '';
-        if (editTotalWaterBillHousehold) editTotalWaterBillHousehold.value = billToEdit.totalWaterBillHousehold || '';
-        if (editWaterRate) editWaterRate.value = (billToEdit.waterRate || 0).toFixed(4);
+        // Show modal
+        const modal = document.getElementById('edit-modal');
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
 
+        // Calculate and display totals
+        calculateEditTotals();
 
-        document.getElementById('edit-modal').classList.remove('hidden');
-        document.getElementById('edit-modal').classList.add('flex');
+    } catch (error) {
+        console.error('Error opening edit modal:', error);
+        showAlert('เกิดข้อผิดพลาดในการโหลดข้อมูล', 'error');
     }
 }
 
@@ -444,99 +547,88 @@ async function saveEdit() {
         showAlert('คุณไม่มีสิทธิ์แก้ไขข้อมูล', 'error');
         return;
     }
-    const key = document.getElementById('edit-key').value;
-    const date = document.getElementById('edit-date').value;
-    const dueDate = document.getElementById('edit-due-date').value; // New
-    const current = parseFloat(document.getElementById('edit-current').value);
-    const previous = parseFloat(document.getElementById('edit-previous').value);
-    const totalAll = parseFloat(document.getElementById('edit-total-all').value);
-    // Retrieve original rate for electricity from the hidden (or readonly) input
-    const electricRate = parseFloat(document.getElementById('edit-rate').value);
-
-
-    // Water fields from edit modal
-    const currentWater = parseFloat(document.getElementById('edit-current-water').value) || 0;
-    const previousWater = parseFloat(document.getElementById('edit-previous-water').value) || 0;
-    const totalWaterBillHousehold = parseFloat(document.getElementById('edit-total-water-bill-household').value) || 0;
-    // Retrieve original water rate
-    const waterRate = parseFloat(document.getElementById('edit-water-rate').value) || 0;
-
-
-     // Validation
-    if (!date || !dueDate || isNaN(current) || isNaN(previous) || isNaN(electricRate)) {
-        showAlert('กรุณากรอกข้อมูลไฟฟ้าที่จำเป็นให้ครบถ้วน (วันที่, ครบกำหนด, มิเตอร์ปัจจุบัน/ก่อน, เรท)', 'error');
-        return;
-    }
-    if (current < previous) {
-        showAlert('ค่ามิเตอร์ไฟฟ้าปัจจุบันต้องไม่น้อยกว่าครั้งที่แล้ว', 'error');
-        return;
-    }
-
-    const waterFieldsExistInModal = document.getElementById('edit-current-water');
-    if (waterFieldsExistInModal) { // Check if water fields are part of the modal
-        if ( (currentWater || previousWater || totalWaterBillHousehold) && (isNaN(currentWater) || isNaN(waterRate)) ) {
-             showAlert('หากมีการกรอกข้อมูลน้ำ กรุณากรอกเลขมิเตอร์น้ำปัจจุบัน และเรทค่าน้ำให้ถูกต้อง', 'error');
-             return;
-        }
-        if (currentWater < previousWater) {
-            showAlert('ค่ามิเตอร์น้ำปัจจุบันต้องไม่น้อยกว่าครั้งที่แล้ว', 'error');
-            return;
-        }
-    }
-
-
-    // Keep original room and name
-    const bills = await loadFromFirebase();
-    const originalBill = bills.find(b => b.key === key);
     
-    // Recalculate electricity units and total
-    const units = current - previous;
-    const total = units * electricRate; // Use the rate from the form (should be original or correctly calculated)
-
-    // Recalculate water units and total
-    let waterUnits = 0;
-    let waterTotal = 0;
-    if (waterFieldsExistInModal && !isNaN(currentWater) && !isNaN(previousWater) && !isNaN(waterRate)) {
-        waterUnits = currentWater - previousWater;
-        waterTotal = waterUnits * waterRate;
-    } else if (waterFieldsExistInModal && !isNaN(currentWater) && isNaN(previousWater) && !isNaN(waterRate)) {
-        waterUnits = currentWater - 0;
-        waterTotal = waterUnits * waterRate;
+    if (editingIndex === -1) {
+        showAlert('ไม่พบข้อมูลที่ต้องการแก้ไข', 'error');
+        return;
     }
-
-
-    const updatedData = {
-        date: date,
-        dueDate: dueDate,
-        current: current,
-        previous: previous,
-        totalAll: totalAll, // Total electricity bill for household
-        units: units,
-        total: total,       // Room electricity bill
-        rate: electricRate, // Electricity rate
-        room: originalBill.room,
-        name: originalBill.name,
-
-        // Water data
-        currentWater: currentWater || 0,
-        previousWater: previousWater || 0,
-        waterUnits: waterUnits || 0,
-        waterRate: waterRate || 0,
-        waterTotal: waterTotal || 0,
-        totalWaterBillHousehold: totalWaterBillHousehold || 0,
-        // totalWaterUnitsHousehold is not directly edited here, it's for rate calculation
-        // If it needs to be stored/edited, add a field in the modal.
-        // For now, assume it's mainly used for initial rate calculation.
-    };
 
     try {
-        await db.ref(`electricityData/${key}`).update(updatedData);
-        showAlert('แก้ไขข้อมูลสำเร็จ', 'success');
+        // Get form values
+        const room = document.getElementById('edit-room').value;
+        const name = document.getElementById('edit-name').value;
+        const date = document.getElementById('edit-date').value;
+        const current = parseFloat(document.getElementById('edit-current').value) || 0;
+        const previous = parseFloat(document.getElementById('edit-previous').value) || 0;
+        const rate = parseFloat(document.getElementById('edit-rate').value) || 0;
+        const total = parseFloat(document.getElementById('edit-total').value) || 0;
+        const totalall = parseFloat(document.getElementById('edit-totalall').value) || 0;
+        const dueDate = document.getElementById('edit-due-date').value;
+        
+        // Water values
+        const waterCurrent = parseFloat(document.getElementById('edit-water-current').value) || 0;
+        const waterPrevious = parseFloat(document.getElementById('edit-water-previous').value) || 0;
+        const waterRate = parseFloat(document.getElementById('edit-water-rate').value) || 0;
+        const waterTotal = parseFloat(document.getElementById('edit-water-total').value) || 0;
+        const waterTotalall = parseFloat(document.getElementById('edit-water-totalall').value) || 0;
+
+        // Validate required fields
+        if (!room || !name || !date) {
+            showAlert('กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน', 'error');
+            return;
+        }
+
+        // Calculate units
+        const units = current - previous;
+        const waterUnits = waterCurrent - waterPrevious;
+
+        // Prepare update data
+        const updateData = {
+            room,
+            name,
+            date,
+            current,
+            previous,
+            units,
+            rate,
+            total,
+            totalall,
+            dueDate,
+            waterCurrent,
+            waterPrevious,
+            waterUnits,
+            waterRate,
+            waterTotal,
+            waterTotalall,
+            updatedAt: new Date().toISOString(),
+            updatedBy: auth.currentUser?.uid || 'unknown'
+        };
+
+        // Update in Firebase
+        await db.ref(`electricityData/${editingIndex}`).update(updateData);
+
+        showAlert('บันทึกการแก้ไขเรียบร้อยแล้ว', 'success');
+
+        // Close modal
         closeModal();
-        renderHistoryTable(originalBill.room);
+
+        // Refresh the table
+        const params = new URLSearchParams(window.location.search);
+        const roomParam = params.get('room');
+        if (roomParam) {
+            renderHistoryTable(roomParam);
+            updatePreviousReadingFromDB(roomParam);
+        } else {
+            // If on home page, refresh room cards
+            renderHomeRoomCards();
+        }
+
+        // Reset editing index
+        editingIndex = -1;
+
     } catch (error) {
         console.error('Error saving edit:', error);
-        showAlert('เกิดข้อผิดพลาดในการบันทึกการแก้ไข', 'error');
+        showAlert('เกิดข้อผิดพลาดในการบันทึกข้อมูล', 'error');
     }
 }
 
@@ -596,7 +688,12 @@ async function migrateOldData() {
 // --- UI & Utility ---
 
 function viewRoomHistory(room) {
-    window.location.href = `index.html?room=${room}`;
+    if (!hasPermission('canViewHistory')) {
+        showAlert('คุณไม่มีสิทธิ์ดูประวัติข้อมูล', 'error');
+        return;
+    }
+    
+    window.location.href = `index.html?room=${encodeURIComponent(room)}`;
 }
 
 function updatePagination(totalItems, totalPages) {
@@ -675,9 +772,6 @@ function getDueDateInfo(dueDateStr) {
 }
 
 // --- Modal Controls ---
-let keyToDelete = null;
-let keyForEvidence = null;
-
 function closeModal() {
     const modal = document.getElementById('edit-modal');
     modal.classList.add('hidden');
@@ -685,19 +779,37 @@ function closeModal() {
 }
 
 function openEvidenceModal(key) {
+    console.log('=== openEvidenceModal started ===');
+    console.log('Key parameter:', key);
+    
     if (!hasPermission('canUploadEvidence')) {
+        console.log('Permission denied: canUploadEvidence');
         showAlert('คุณไม่มีสิทธิ์แนบหลักฐาน', 'error');
         return;
     }
+    
     keyForEvidence = key;
+    console.log('keyForEvidence set to:', keyForEvidence);
+    
     // Reset modal state
     const preview = document.getElementById('evidence-preview');
     const placeholder = document.getElementById('evidence-placeholder');
     const errorMsg = document.getElementById('evidence-error');
     const saveBtn = document.getElementById('evidence-save-btn');
     const fileInput = document.getElementById('evidence-image-input');
+    const cameraInput = document.getElementById('evidence-camera-input');
+    
+    console.log('Modal elements found:', {
+        preview: !!preview,
+        placeholder: !!placeholder,
+        errorMsg: !!errorMsg,
+        saveBtn: !!saveBtn,
+        fileInput: !!fileInput,
+        cameraInput: !!cameraInput
+    });
     
     fileInput.value = '';
+    cameraInput.value = '';
     preview.innerHTML = '';
     preview.classList.add('hidden');
     placeholder.classList.remove('hidden');
@@ -705,8 +817,17 @@ function openEvidenceModal(key) {
     saveBtn.disabled = true;
 
     const modal = document.getElementById('evidence-modal');
-    modal.classList.remove('hidden');
-    modal.classList.add('flex');
+    console.log('Modal element found:', !!modal);
+    
+    if (modal) {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        console.log('Modal opened successfully');
+    } else {
+        console.error('Modal element not found!');
+    }
+    
+    console.log('=== openEvidenceModal ended ===');
 }
 
 function closeEvidenceModal() {
@@ -721,6 +842,7 @@ function openDeleteConfirmModal(key) {
         showAlert('คุณไม่มีสิทธิ์ลบข้อมูล', 'error');
         return;
     }
+    
     keyToDelete = key;
     const modal = document.getElementById('delete-confirm-modal');
     modal.classList.remove('hidden');
@@ -741,7 +863,15 @@ function closeQrCodeModal() {
 }
 
 async function confirmDelete() {
-    if (!keyToDelete) return;
+    if (!hasPermission('canDeleteBills')) {
+        showAlert('คุณไม่มีสิทธิ์ลบข้อมูล', 'error');
+        return;
+    }
+    
+    if (!keyToDelete) {
+        showAlert('ไม่พบข้อมูลที่ต้องการลบ', 'error');
+        return;
+    }
 
     try {
         await db.ref(`electricityData/${keyToDelete}`).remove();
@@ -761,120 +891,481 @@ async function confirmDelete() {
 }
 
 async function handleEvidenceUpload() {
+    console.log('=== handleEvidenceUpload started ===');
+    
     const fileInput = document.getElementById('evidence-image-input');
-    const file = fileInput.files[0];
-    if (!file || !keyForEvidence) return;
+    const cameraInput = document.getElementById('evidence-camera-input');
+    const file = fileInput.files[0] || cameraInput.files[0];
+    
+    console.log('File input:', fileInput);
+    console.log('Camera input:', cameraInput);
+    console.log('Selected file:', file);
+    console.log('keyForEvidence:', keyForEvidence);
+    
+    if (!file || !keyForEvidence) {
+        console.error('Missing file or keyForEvidence');
+        console.log('File exists:', !!file);
+        console.log('keyForEvidence exists:', !!keyForEvidence);
+        showAlert('กรุณาเลือกไฟล์และตรวจสอบสิทธิ์การเข้าถึง', 'error');
+        return;
+    }
+
+    // Validate file type and size
+    if (!file.type.startsWith('image/')) {
+        showAlert('กรุณาเลือกไฟล์รูปภาพเท่านั้น (JPG, PNG, GIF)', 'error');
+        return;
+    }
+    
+    if (file.size > 5 * 1024 * 1024) { // 5MB limit
+        showAlert('ขนาดไฟล์ต้องไม่เกิน 5MB', 'error');
+        return;
+    }
 
     const saveBtn = document.getElementById('evidence-save-btn');
     const progressContainer = document.getElementById('upload-progress-container');
     const progressBar = document.getElementById('upload-progress-bar');
+    const uploadStatus = document.getElementById('upload-status');
+    const uploadPercentage = document.getElementById('upload-percentage');
+    const uploadFilename = document.getElementById('upload-filename');
     const errorMsg = document.getElementById('evidence-error');
 
+    console.log('UI elements found:', {
+        saveBtn: !!saveBtn,
+        progressContainer: !!progressContainer,
+        progressBar: !!progressBar,
+        uploadStatus: !!uploadStatus,
+        uploadPercentage: !!uploadPercentage,
+        uploadFilename: !!uploadFilename,
+        errorMsg: !!errorMsg
+    });
+
+    // Update UI for upload state
     saveBtn.disabled = true;
     saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>กำลังอัปโหลด...';
     progressContainer.classList.remove('hidden');
+    uploadStatus.classList.remove('hidden');
     progressBar.style.width = '0%';
+    uploadPercentage.textContent = '0%';
+    uploadFilename.textContent = file.name;
     errorMsg.textContent = '';
 
     try {
-        // Assume storage is initialized in auth.js or globally
-        const storageRef = firebase.storage().ref();
-        const evidenceRef = storageRef.child(`evidence/${keyForEvidence}/${Date.now()}_${file.name}`);
-        
-        const uploadTask = evidenceRef.put(file);
+        console.log('Checking Firebase Storage availability...');
+        // Check if Firebase Storage is available
+        if (!firebase.storage) {
+            console.error('Firebase Storage not available');
+            throw new Error('Firebase Storage ไม่พร้อมใช้งาน');
+        }
 
+        console.log('Firebase Storage is available');
+        console.log('Firebase config:', firebase.app().options);
+
+        // Create storage reference with proper path structure
+        const storageRef = firebase.storage().ref();
+        const timestamp = Date.now();
+        const sanitizedFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+        const fileName = `${timestamp}_${sanitizedFileName}`;
+        const evidenceRef = storageRef.child(`evidence/${keyForEvidence}/${fileName}`);
+        
+        console.log('Storage reference created:', {
+            timestamp,
+            fileName,
+            fullPath: `evidence/${keyForEvidence}/${fileName}`
+        });
+        
+        console.log('Starting upload...');
+        
+        // Create upload task with metadata
+        const metadata = {
+            contentType: file.type,
+            customMetadata: {
+                originalName: file.name,
+                uploadedBy: auth.currentUser?.uid || 'unknown',
+                uploadedAt: new Date().toISOString(),
+                billKey: keyForEvidence
+            }
+        };
+        
+        const uploadTask = evidenceRef.put(file, metadata);
+
+        // Monitor upload progress
         uploadTask.on('state_changed', 
             (snapshot) => {
                 const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                console.log('Upload progress:', progress + '%');
                 progressBar.style.width = progress + '%';
+                uploadPercentage.textContent = `${Math.round(progress)}%`;
+                
+                // Update status text based on progress
+                if (progress < 100) {
+                    uploadFilename.textContent = `กำลังอัปโหลด ${file.name}...`;
+                } else {
+                    uploadFilename.textContent = `อัปโหลดเสร็จสิ้น - ${file.name}`;
+                }
             }, 
             (error) => {
-                throw error; // Pass error to the catch block
+                console.error('Upload error:', error);
+                console.error('Error code:', error.code);
+                console.error('Error message:', error.message);
+                
+                let errorMessage = 'เกิดข้อผิดพลาดในการอัปโหลด';
+                
+                // Handle specific Firebase Storage errors
+                switch (error.code) {
+                    case 'storage/unauthorized':
+                        errorMessage = 'ไม่มีสิทธิ์ในการอัปโหลดไฟล์';
+                        break;
+                    case 'storage/canceled':
+                        errorMessage = 'การอัปโหลดถูกยกเลิก';
+                        break;
+                    case 'storage/unknown':
+                        errorMessage = 'เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ';
+                        break;
+                    case 'storage/quota-exceeded':
+                        errorMessage = 'พื้นที่จัดเก็บไฟล์เต็ม';
+                        break;
+                    case 'storage/unauthenticated':
+                        errorMessage = 'กรุณาเข้าสู่ระบบใหม่';
+                        break;
+                    default:
+                        errorMessage = `ข้อผิดพลาด: ${error.message}`;
+                }
+                
+                throw new Error(errorMessage);
             }, 
             async () => {
-                const downloadURL = await uploadTask.snapshot.ref.getDownloadURL();
-                await db.ref(`electricityData/${keyForEvidence}`).update({ evidenceUrl: downloadURL });
-                
-                showAlert('อัปโหลดหลักฐานสำเร็จ!', 'success');
-                closeEvidenceModal();
-                const room = new URLSearchParams(window.location.search).get('room');
-                renderHistoryTable(room);
+                try {
+                    console.log('Upload completed, getting download URL...');
+                    // Get download URL
+                    const downloadURL = await uploadTask.snapshot.ref.getDownloadURL();
+                    console.log('Download URL obtained:', downloadURL);
+                    
+                    console.log('Updating database...');
+                    // Update database with evidence URL
+                    await db.ref(`electricityData/${keyForEvidence}`).update({ 
+                        evidenceUrl: downloadURL,
+                        evidenceUploadedAt: new Date().toISOString(),
+                        evidenceFileName: fileName,
+                        evidenceFileSize: file.size,
+                        evidenceFileType: file.type,
+                        evidenceUploadedBy: auth.currentUser?.uid || 'unknown'
+                    });
+                    
+                    console.log('Database updated successfully');
+                    
+                    // Show success message
+                    showAlert('อัปโหลดหลักฐานสำเร็จ!', 'success');
+                    
+                    // Close modal and refresh table
+                    closeEvidenceModal();
+                    const room = new URLSearchParams(window.location.search).get('room');
+                    if (room) {
+                        renderHistoryTable(room);
+                    } else {
+                        // If on home page, refresh room cards
+                        renderHomeRoomCards();
+                    }
+                    
+                } catch (dbError) {
+                    console.error('Database update error:', dbError);
+                    throw new Error('ไม่สามารถบันทึกข้อมูลลงฐานข้อมูลได้');
+                }
             }
         );
 
     } catch (error) {
         console.error("Upload failed:", error);
-        errorMsg.textContent = `เกิดข้อผิดพลาด: ${error.message}`;
+        console.error("Error details:", {
+            name: error.name,
+            message: error.message,
+            code: error.code,
+            stack: error.stack
+        });
+        
+        errorMsg.textContent = error.message;
+        showAlert(error.message, 'error');
+        
+        // Reset UI
         saveBtn.disabled = false;
         saveBtn.innerHTML = '<i class="fas fa-save"></i> บันทึก';
         progressContainer.classList.add('hidden');
+        uploadStatus.classList.add('hidden');
     }
+    
+    console.log('=== handleEvidenceUpload ended ===');
 }
 
 
 // --- Event Listeners Setup ---
 
-function setupEvidenceModalListeners() {
-    const dropzone = document.getElementById('evidence-dropzone');
-    const fileInput = document.getElementById('evidence-image-input');
+// Global functions for evidence handling
+function handleFileSelect(file) {
+    console.log('=== handleFileSelect started ===');
+    console.log('File received:', file);
+    console.log('File details:', {
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        lastModified: file.lastModified
+    });
+    
     const preview = document.getElementById('evidence-preview');
     const placeholder = document.getElementById('evidence-placeholder');
     const saveBtn = document.getElementById('evidence-save-btn');
     const errorMsg = document.getElementById('evidence-error');
-
-    dropzone.addEventListener('click', () => fileInput.click());
     
-    dropzone.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        dropzone.classList.add('border-blue-500', 'bg-slate-700');
-    });
-
-    dropzone.addEventListener('dragleave', () => {
-        dropzone.classList.remove('border-blue-500', 'bg-slate-700');
-    });
-
-    dropzone.addEventListener('drop', (e) => {
-        e.preventDefault();
-        dropzone.classList.remove('border-blue-500', 'bg-slate-700');
-        const files = e.dataTransfer.files;
-        if (files.length) {
-            fileInput.files = files;
-            handleFileSelect(files[0]);
-        }
+    console.log('UI elements found:', {
+        preview: !!preview,
+        placeholder: !!placeholder,
+        saveBtn: !!saveBtn,
+        errorMsg: !!errorMsg
     });
     
-    fileInput.addEventListener('change', () => {
-        if (fileInput.files.length) {
-            handleFileSelect(fileInput.files[0]);
-        }
-    });
+    // Clear previous error
+    errorMsg.textContent = '';
+    
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+        console.error('Invalid file type:', file.type);
+        errorMsg.textContent = 'กรุณาเลือกไฟล์รูปภาพเท่านั้น (JPG, PNG, GIF)';
+        saveBtn.disabled = true;
+        return;
+    }
+    
+    // Validate file size (5MB limit)
+    if (file.size > 5 * 1024 * 1024) {
+        console.error('File too large:', file.size);
+        errorMsg.textContent = 'ขนาดไฟล์ต้องไม่เกิน 5MB';
+        saveBtn.disabled = true;
+        return;
+    }
+    
+    // Validate file name
+    if (file.name.length > 100) {
+        console.error('File name too long:', file.name.length);
+        errorMsg.textContent = 'ชื่อไฟล์ต้องไม่เกิน 100 ตัวอักษร';
+        saveBtn.disabled = true;
+        return;
+    }
 
-    const handleFileSelect = (file) => {
-        errorMsg.textContent = '';
-        if (!file.type.startsWith('image/')) {
-            errorMsg.textContent = 'กรุณาเลือกไฟล์รูปภาพเท่านั้น';
-            saveBtn.disabled = true;
-            return;
+    console.log('File validation passed, creating preview...');
+    
+    // Show file info
+    const fileSize = (file.size / 1024 / 1024).toFixed(2);
+    const objectURL = URL.createObjectURL(file);
+    console.log('Object URL created:', objectURL);
+    
+    // Create preview with better formatting
+    preview.innerHTML = `
+        <div class="w-full max-w-sm">
+            <img src="${objectURL}" class="w-full h-40 object-cover rounded-lg mb-3 border border-slate-600">
+            <div class="bg-slate-700/50 rounded-lg p-3 space-y-1">
+                <div class="flex justify-between text-sm">
+                    <span class="text-slate-400">ชื่อไฟล์:</span>
+                    <span class="text-white font-medium truncate ml-2">${file.name}</span>
+                </div>
+                <div class="flex justify-between text-sm">
+                    <span class="text-slate-400">ขนาด:</span>
+                    <span class="text-green-400 font-medium">${fileSize} MB</span>
+                </div>
+                <div class="flex justify-between text-sm">
+                    <span class="text-slate-400">ประเภท:</span>
+                    <span class="text-blue-400 font-medium">${file.type}</span>
+                </div>
+                <div class="flex justify-between text-sm">
+                    <span class="text-slate-400">ความละเอียด:</span>
+                    <span class="text-yellow-400 font-medium">กำลังตรวจสอบ...</span>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Get image dimensions
+    const img = new Image();
+    img.onload = function() {
+        const resolutionText = `${this.width} × ${this.height}`;
+        const resolutionElement = preview.querySelector('.text-yellow-400');
+        if (resolutionElement) {
+            resolutionElement.textContent = resolutionText;
         }
-        if (file.size > 5 * 1024 * 1024) { // 5MB limit
-             errorMsg.textContent = 'ขนาดไฟล์ต้องไม่เกิน 5MB';
-             saveBtn.disabled = true;
-             return;
-        }
-
-        preview.innerHTML = `<img src="${URL.createObjectURL(file)}" class="max-h-40 rounded-lg object-contain">`;
-        preview.classList.remove('hidden');
-        placeholder.classList.add('hidden');
-        saveBtn.disabled = false;
     };
+    img.src = objectURL;
+    
+    preview.classList.remove('hidden');
+    placeholder.classList.add('hidden');
+    saveBtn.disabled = false;
+    
+    console.log('Preview created successfully');
+    console.log('=== handleFileSelect ended ===');
+}
 
-    saveBtn.addEventListener('click', handleEvidenceUpload);
+function clearEvidenceSelection() {
+    const fileInput = document.getElementById('evidence-image-input');
+    const cameraInput = document.getElementById('evidence-camera-input');
+    const preview = document.getElementById('evidence-preview');
+    const placeholder = document.getElementById('evidence-placeholder');
+    const saveBtn = document.getElementById('evidence-save-btn');
+    const errorMsg = document.getElementById('evidence-error');
+    
+    fileInput.value = '';
+    cameraInput.value = '';
+    preview.innerHTML = '';
+    preview.classList.add('hidden');
+    placeholder.classList.remove('hidden');
+    saveBtn.disabled = true;
+    errorMsg.textContent = '';
+}
+
+function setupEvidenceModalListeners() {
+    console.log('=== setupEvidenceModalListeners started ===');
+    
+    const dropzone = document.getElementById('evidence-dropzone');
+    const fileInput = document.getElementById('evidence-image-input');
+    const cameraInput = document.getElementById('evidence-camera-input');
+    const saveBtn = document.getElementById('evidence-save-btn');
+    const clearBtn = document.getElementById('evidence-clear-btn');
+    const cameraBtn = document.getElementById('camera-btn');
+    const galleryBtn = document.getElementById('gallery-btn');
+    const fileBtn = document.getElementById('file-btn');
+
+    console.log('Elements found:', {
+        dropzone: !!dropzone,
+        fileInput: !!fileInput,
+        cameraInput: !!cameraInput,
+        saveBtn: !!saveBtn,
+        clearBtn: !!clearBtn,
+        cameraBtn: !!cameraBtn,
+        galleryBtn: !!galleryBtn,
+        fileBtn: !!fileBtn
+    });
+
+    // Camera button
+    if (cameraBtn) {
+        cameraBtn.addEventListener('click', () => {
+            console.log('Camera button clicked');
+            cameraInput.click();
+        });
+        console.log('Camera button listener added');
+    } else {
+        console.error('Camera button not found');
+    }
+
+    // Gallery button
+    if (galleryBtn) {
+        galleryBtn.addEventListener('click', () => {
+            console.log('Gallery button clicked');
+            fileInput.click();
+        });
+        console.log('Gallery button listener added');
+    } else {
+        console.error('Gallery button not found');
+    }
+
+    // File button
+    if (fileBtn) {
+        fileBtn.addEventListener('click', () => {
+            console.log('File button clicked');
+            fileInput.click();
+        });
+        console.log('File button listener added');
+    } else {
+        console.error('File button not found');
+    }
+
+    // Clear button
+    if (clearBtn) {
+        clearBtn.addEventListener('click', () => {
+            console.log('Clear button clicked');
+            clearEvidenceSelection();
+        });
+        console.log('Clear button listener added');
+    } else {
+        console.error('Clear button not found');
+    }
+
+    // Dropzone click
+    if (dropzone) {
+        dropzone.addEventListener('click', () => {
+            console.log('Dropzone clicked');
+            fileInput.click();
+        });
+        console.log('Dropzone click listener added');
+    } else {
+        console.error('Dropzone not found');
+    }
+    
+    // Drag and drop functionality
+    if (dropzone) {
+        dropzone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropzone.classList.add('border-blue-500', 'bg-slate-700');
+        });
+
+        dropzone.addEventListener('dragleave', () => {
+            dropzone.classList.remove('border-blue-500', 'bg-slate-700');
+        });
+
+        dropzone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropzone.classList.remove('border-blue-500', 'bg-slate-700');
+            const files = e.dataTransfer.files;
+            console.log('Files dropped:', files.length);
+            if (files.length) {
+                handleFileSelect(files[0]);
+            }
+        });
+        console.log('Drag and drop listeners added');
+    }
+    
+    // File input change
+    if (fileInput) {
+        fileInput.addEventListener('change', () => {
+            console.log('File input changed, files:', fileInput.files.length);
+            if (fileInput.files.length) {
+                handleFileSelect(fileInput.files[0]);
+            }
+        });
+        console.log('File input change listener added');
+    } else {
+        console.error('File input not found');
+    }
+
+    // Camera input change
+    if (cameraInput) {
+        cameraInput.addEventListener('change', () => {
+            console.log('Camera input changed, files:', cameraInput.files.length);
+            if (cameraInput.files.length) {
+                handleFileSelect(cameraInput.files[0]);
+            }
+        });
+        console.log('Camera input change listener added');
+    } else {
+        console.error('Camera input not found');
+    }
+
+    // Save button
+    if (saveBtn) {
+        saveBtn.addEventListener('click', () => {
+            console.log('Save button clicked');
+            handleEvidenceUpload();
+        });
+        console.log('Save button listener added');
+    } else {
+        console.error('Save button not found');
+    }
+    
+    console.log('=== setupEvidenceModalListeners ended ===');
 }
 
 function generateQRCode(record) {
+    if (!hasPermission('canGenerateQRCode')) {
+        showAlert('คุณไม่มีสิทธิ์สร้าง QR Code', 'error');
+        return;
+    }
+    
     if (!record) {
         console.error("Record not found");
-        alert('ไม่พบข้อมูลสำหรับสร้าง QR Code');
+        showAlert('ไม่พบข้อมูลสำหรับสร้าง QR Code', 'error');
         return;
     }
 

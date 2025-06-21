@@ -210,60 +210,105 @@
         <!-- Modals -->
         <!-- Edit Modal -->
         <div id="edit-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden items-center justify-center z-50">
-            <div class="bg-slate-800 border border-slate-700 rounded-2xl p-6 w-full max-w-md mx-4 shadow-lg">
+            <div class="bg-slate-800 border border-slate-700 rounded-2xl p-6 w-full max-w-2xl mx-4 shadow-lg max-h-[90vh] overflow-y-auto">
                 <div class="flex justify-between items-center mb-6">
                     <h2 class="text-xl font-bold text-white">แก้ไขข้อมูล</h2>
                     <button class="text-2xl text-slate-400 hover:text-white transition-colors" onclick="closeModal()">&times;</button>
                 </div>
-                <div class="space-y-4">
+                <div class="space-y-6">
                     <input type="hidden" id="edit-key" />
+                    
+                    <!-- Date Section -->
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                             <label class="block text-sm font-medium text-slate-300 mb-1">วันที่จด</label>
                             <input type="text" id="edit-date" class="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition" />
                         </div>
-                         <div>
+                        <div>
                             <label class="block text-sm font-medium text-slate-300 mb-1">วันครบกำหนด</label>
                             <input type="text" id="edit-due-date" class="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition" />
                         </div>
                     </div>
-                    <div>
-                        <label class="block text-sm font-medium text-slate-300 mb-1">เลขมิเตอร์ปัจจุบัน</label>
-                        <input type="number" id="edit-current" class="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition" />
+
+                    <!-- Electricity Section -->
+                    <div class="bg-slate-700/50 rounded-lg p-4">
+                        <h3 class="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+                            <i class="fas fa-bolt text-yellow-400"></i>
+                            ข้อมูลค่าไฟฟ้า
+                        </h3>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                            <div>
+                                <label class="block text-sm font-medium text-slate-300 mb-1">มิเตอร์ปัจจุบัน</label>
+                                <input type="number" id="edit-current" class="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition text-sm" />
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-slate-300 mb-1">มิเตอร์ก่อน</label>
+                                <input type="number" id="edit-previous" class="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition text-sm" />
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-slate-300 mb-1">เรท/หน่วย</label>
+                                <input type="number" id="edit-rate" step="0.0001" class="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition text-sm" />
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-slate-300 mb-1">ค่าไฟรวม (บ้าน)</label>
+                                <input type="number" id="edit-total-all" class="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition text-sm" />
+                            </div>
+                        </div>
                     </div>
-                    <div>
-                        <label class="block text-sm font-medium text-slate-300 mb-1">ครั้งที่แล้ว</label>
-                        <input type="number" id="edit-previous" class="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition" />
+
+                    <!-- Water Section -->
+                    <div class="bg-slate-700/50 rounded-lg p-4">
+                        <h3 class="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+                            <i class="fas fa-tint text-cyan-400"></i>
+                            ข้อมูลค่าน้ำ
+                        </h3>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                            <div>
+                                <label class="block text-sm font-medium text-slate-300 mb-1">มิเตอร์น้ำปัจจุบัน</label>
+                                <input type="number" id="edit-current-water" class="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition text-sm" />
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-slate-300 mb-1">มิเตอร์น้ำก่อน</label>
+                                <input type="number" id="edit-previous-water" class="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition text-sm" />
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-slate-300 mb-1">เรทน้ำ/หน่วย</label>
+                                <input type="number" id="edit-water-rate" step="0.0001" class="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition text-sm" />
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-slate-300 mb-1">ค่าน้ำรวม (บ้าน)</label>
+                                <input type="number" id="edit-total-water-bill-household" class="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition text-sm" />
+                            </div>
+                        </div>
                     </div>
-                    <div>
-                        <label class="block text-sm font-medium text-slate-300 mb-1">ค่าไฟรวม (บ้าน)</label>
-                         <input type="number" id="edit-total-all" class="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition" />
-                    </div>
-                     <div>
-                        <label class="block text-sm font-medium text-slate-300 mb-1">เรทค่าไฟ/หน่วย</label>
-                        <input type="number" id="edit-rate" readonly class="w-full px-4 py-2 bg-slate-700 border-slate-600 rounded-lg cursor-not-allowed" />
-                    </div>
-                    <hr class="my-4 border-slate-600 sm:col-span-2"> <!-- Separator for water bill -->
-                    <h3 class="text-lg font-semibold text-white mb-0 sm:col-span-2">ข้อมูลค่าน้ำ</h3>
-                    <div>
-                        <label class="block text-sm font-medium text-slate-300 mb-1">เลขมิเตอร์น้ำปัจจุบัน</label>
-                        <input type="number" id="edit-current-water" class="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition" />
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-slate-300 mb-1">มิเตอร์น้ำครั้งก่อน</label>
-                        <input type="number" id="edit-previous-water" class="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition" />
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-slate-300 mb-1">ค่าน้ำรวม (บ้าน)</label>
-                         <input type="number" id="edit-total-water-bill-household" class="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition" />
-                    </div>
-                     <div>
-                        <label class="block text-sm font-medium text-slate-300 mb-1">เรทค่าน้ำ/หน่วย</label>
-                        <input type="number" id="edit-water-rate" readonly class="w-full px-4 py-2 bg-slate-700 border-slate-600 rounded-lg cursor-not-allowed" />
+
+                    <!-- Calculated Results Display -->
+                    <div class="bg-slate-700/50 rounded-lg p-4">
+                        <h3 class="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+                            <i class="fas fa-calculator text-green-400"></i>
+                            ผลการคำนวณ
+                        </h3>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div class="bg-slate-800 rounded-lg p-3 border border-slate-600">
+                                <div class="text-sm text-slate-400 mb-1 flex items-center gap-2">
+                                    <i class="fas fa-bolt text-yellow-400"></i>
+                                    ค่าไฟฟ้า
+                                </div>
+                                <div class="text-xl font-bold text-yellow-400" id="edit-electricity-total">฿0.00</div>
+                            </div>
+                            <div class="bg-slate-800 rounded-lg p-3 border border-slate-600">
+                                <div class="text-sm text-slate-400 mb-1 flex items-center gap-2">
+                                    <i class="fas fa-tint text-cyan-400"></i>
+                                    ค่าน้ำ
+                                </div>
+                                <div class="text-xl font-bold text-cyan-400" id="edit-water-total">฿0.00</div>
+                            </div>
+                        </div>
                     </div>
 
                 </div>
-                <button onclick="saveEdit()" class="w-full mt-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg font-bold text-base transition-all shadow-md">
+                <button onclick="saveEdit()" class="w-full mt-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg font-bold text-base transition-all shadow-md flex items-center justify-center gap-2">
+                    <i class="fas fa-save"></i>
                     บันทึกการแก้ไข
                 </button>
             </div>
@@ -271,24 +316,60 @@
 
         <!-- Evidence Modal -->
         <div id="evidence-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden items-center justify-center z-50">
-            <div class="bg-slate-800 border border-slate-700 rounded-2xl p-6 w-full max-w-md mx-4 relative shadow-lg">
+            <div class="bg-slate-800 border border-slate-700 rounded-2xl p-6 w-full max-w-lg mx-4 relative shadow-lg max-h-[90vh] overflow-y-auto">
                 <button class="absolute top-3 right-4 text-slate-400 hover:text-white text-2xl font-bold" onclick="closeEvidenceModal()">&times;</button>
                 <h2 class="text-xl font-bold text-white mb-4 text-center">แนบหลักฐานการชำระเงิน</h2>
-                <div id="evidence-dropzone" class="flex flex-col items-center justify-center border-2 border-dashed border-slate-600 rounded-xl bg-slate-900 p-6 cursor-pointer transition hover:bg-slate-700/50 w-full min-h-[170px] mb-4">
-                    <input type="file" id="evidence-image-input" accept="image/*" class="hidden" />
+                
+                <!-- Upload Options -->
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+                    <button id="camera-btn" class="flex flex-col items-center justify-center p-4 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors border border-slate-600">
+                        <i class="fas fa-camera text-2xl text-blue-400 mb-2"></i>
+                        <span class="text-sm text-slate-300">ถ่ายรูป</span>
+                    </button>
+                    <button id="gallery-btn" class="flex flex-col items-center justify-center p-4 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors border border-slate-600">
+                        <i class="fas fa-images text-2xl text-green-400 mb-2"></i>
+                        <span class="text-sm text-slate-300">แกลเลอรี่</span>
+                    </button>
+                    <button id="file-btn" class="flex flex-col items-center justify-center p-4 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors border border-slate-600">
+                        <i class="fas fa-file-upload text-2xl text-purple-400 mb-2"></i>
+                        <span class="text-sm text-slate-300">เลือกไฟล์</span>
+                    </button>
+                </div>
+
+                <!-- Hidden inputs -->
+                <input type="file" id="evidence-image-input" accept="image/*" class="hidden" />
+                <input type="file" id="evidence-camera-input" accept="image/*" capture="environment" class="hidden" />
+                
+                <!-- Dropzone -->
+                <div id="evidence-dropzone" class="flex flex-col items-center justify-center border-2 border-dashed border-slate-600 rounded-xl bg-slate-900 p-6 cursor-pointer transition hover:bg-slate-700/50 w-full min-h-[200px] mb-4">
                     <div id="evidence-preview" class="w-full flex flex-col items-center gap-2"></div>
                     <div id="evidence-placeholder" class="flex flex-col items-center text-slate-400">
                         <i class="fas fa-cloud-upload-alt text-4xl mb-2"></i>
-                        <span class="text-base">ลากไฟล์มาวาง หรือคลิกเพื่อเลือกไฟล์</span>
+                        <span class="text-base text-center">ลากไฟล์มาวาง หรือเลือกวิธีอัพโหลดด้านบน</span>
+                        <span class="text-sm text-slate-500 mt-1">รองรับไฟล์: JPG, PNG, GIF (สูงสุด 5MB)</span>
                     </div>
                 </div>
-                <div id="upload-progress-container" class="w-full bg-slate-700 rounded-full h-2.5 mb-4 hidden">
-                    <div id="upload-progress-bar" class="bg-blue-600 h-2.5 rounded-full" style="width: 0%"></div>
+
+                <!-- Upload Progress -->
+                <div id="upload-progress-container" class="w-full bg-slate-700 rounded-full h-3 mb-4 hidden">
+                    <div id="upload-progress-bar" class="bg-blue-600 h-3 rounded-full transition-all duration-300" style="width: 0%"></div>
                 </div>
+                <div id="upload-status" class="text-center text-sm text-slate-400 mb-2 hidden">
+                    <span id="upload-percentage">0%</span> - <span id="upload-filename">กำลังอัพโหลด...</span>
+                </div>
+
+                <!-- Error Message -->
                 <div id="evidence-error" class="text-red-400 text-sm text-center mb-2"></div>
-                <button id="evidence-save-btn" class="w-full py-3 bg-green-600 hover:bg-green-700 rounded-lg font-bold text-base transition-all shadow-md flex items-center justify-center gap-2" disabled>
-                    <i class="fas fa-save"></i> บันทึก
-                </button>
+
+                <!-- Action Buttons -->
+                <div class="flex gap-3">
+                    <button id="evidence-save-btn" class="flex-1 py-3 bg-green-600 hover:bg-green-700 rounded-lg font-bold text-base transition-all shadow-md flex items-center justify-center gap-2" disabled>
+                        <i class="fas fa-save"></i> บันทึก
+                    </button>
+                    <button id="evidence-clear-btn" class="px-4 py-3 bg-slate-600 hover:bg-slate-500 rounded-lg font-bold text-base transition-all shadow-md flex items-center justify-center gap-2">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -348,7 +429,7 @@
             authDomain: "electricity-bill-calcula-ea4a2.firebaseapp.com",
             databaseURL: "https://electricity-bill-calcula-ea4a2-default-rtdb.asia-southeast1.firebasedatabase.app",
             projectId: "electricity-bill-calcula-ea4a2",
-            storageBucket: "electricity-bill-calcula-ea4a2.appspot.com",
+            storageBucket: "electricity-bill-calcula-ea4a2.firebasestorage.app",
             messagingSenderId: "79440126022",
             appId: "1:79440126022:web:7ffbc16c6661bc75dc6a47",
             measurementId: "G-7JD6H3Q0PM"
@@ -422,6 +503,50 @@
                 rateInput.value = 0;
             }
         }
+
+        // Function to calculate totals in edit modal
+        function calculateEditTotals() {
+            // Calculate electricity total
+            const current = parseFloat(document.getElementById('edit-current').value) || 0;
+            const previous = parseFloat(document.getElementById('edit-previous').value) || 0;
+            const electricRate = parseFloat(document.getElementById('edit-rate').value) || 0;
+            const units = current - previous;
+            const total = units * electricRate;
+            
+            // Calculate water total
+            const currentWater = parseFloat(document.getElementById('edit-current-water').value) || 0;
+            const previousWater = parseFloat(document.getElementById('edit-previous-water').value) || 0;
+            const waterRate = parseFloat(document.getElementById('edit-water-rate').value) || 0;
+            const waterUnits = currentWater - previousWater;
+            const waterTotal = waterUnits * waterRate;
+            
+            // Update display elements
+            const electricityTotalElement = document.getElementById('edit-electricity-total');
+            const waterTotalElement = document.getElementById('edit-water-total');
+            
+            if (electricityTotalElement) {
+                electricityTotalElement.textContent = `฿${total.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+            }
+            if (waterTotalElement) {
+                waterTotalElement.textContent = `฿${waterTotal.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+            }
+        }
+
+        // Add event listeners for automatic calculation in edit modal
+        document.addEventListener('DOMContentLoaded', function() {
+            // Add event listeners for edit modal inputs
+            const editInputs = [
+                'edit-current', 'edit-previous', 'edit-rate',
+                'edit-current-water', 'edit-previous-water', 'edit-water-rate'
+            ];
+            
+            editInputs.forEach(id => {
+                const element = document.getElementById(id);
+                if (element) {
+                    element.addEventListener('input', calculateEditTotals);
+                }
+            });
+        });
     </script>
 </body>
 </html> 

@@ -19,16 +19,22 @@ const ROLE_PERMISSIONS = {
         canEditAllBills: true,
         canDeleteBills: true,
         canUploadEvidence: true,
-        canViewReports: true
+        canViewReports: true,
+        canAddNewBills: true,
+        canGenerateQRCode: true,
+        canViewHistory: true
     },
     'user': {
         canManageUsers: false,
         canManageRoles: false,
-        canViewAllRooms: true,
-        canEditAllBills: true,
+        canViewAllRooms: false,
+        canEditAllBills: false,
         canDeleteBills: false,
-        canUploadEvidence: true,
-        canViewReports: true
+        canUploadEvidence: false,
+        canViewReports: false,
+        canAddNewBills: false,
+        canGenerateQRCode: true,
+        canViewHistory: true
     },
     '1': {
         canManageUsers: false,
@@ -36,8 +42,11 @@ const ROLE_PERMISSIONS = {
         canViewAllRooms: false,
         canEditAllBills: false,
         canDeleteBills: false,
-        canUploadEvidence: true,
-        canViewReports: false
+        canUploadEvidence: false,
+        canViewReports: false,
+        canAddNewBills: false,
+        canGenerateQRCode: true,
+        canViewHistory: true
     },
     '2': {
         canManageUsers: false,
@@ -46,7 +55,10 @@ const ROLE_PERMISSIONS = {
         canEditAllBills: false,
         canDeleteBills: false,
         canUploadEvidence: false,
-        canViewReports: false
+        canViewReports: false,
+        canAddNewBills: false,
+        canGenerateQRCode: true,
+        canViewHistory: true
     }
 };
 
