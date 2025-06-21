@@ -203,10 +203,24 @@ async function renderHomeRoomCards() {
             }
 
             return `
-            <div class="bg-slate-800 rounded-2xl shadow-lg p-5 flex flex-col justify-between hover:bg-slate-700/50 transition-all border border-slate-700 hover:border-blue-500 cursor-pointer" onclick="viewRoomHistory('${room.room}')">
+<<<<<<< HEAD
+            <div class="bg-slate-800 rounded-2xl shadow-lg p-5 flex flex-col justify-between hover:bg-slate-700/50 transition-all border border-slate-700 hover:border-blue-500 cursor-pointer" onclick="viewRoomHistory('${roomData.room}')">
                 <div>
                     <div class="flex justify-between items-start">
-                        <span class="text-3xl font-bold text-blue-400">${room.room}</span>
+                        <span class="text-3xl font-bold text-blue-400">${roomData.room}</span>
+=======
+            <div class="bg-slate-800 rounded-2xl shadow-lg p-5 flex flex-col justify-between hover:bg-slate-700/50 transition-all border border-slate-700 hover:border-blue-500">
+                <div>
+                    <div class="flex justify-between items-start">
+                        <div class="flex items-center gap-2">
+                            <span class="text-3xl font-bold text-blue-400">${room.room}</span>
+                            ${hasPermission('canEditAllBills') ? 
+                                `<button onclick="openEditRoomNameModal('${room.room}', '${room.name || ''}')" class="text-yellow-400 hover:text-yellow-300 transition-colors" title="แก้ไขชื่อห้อง">
+                                    <i class="fas fa-edit text-sm"></i>
+                                </button>` : ''
+                            }
+                        </div>
+>>>>>>> main
                         <div class="text-xs text-gray-400 text-right">
                             <span>อัปเดตล่าสุด</span><br>
                             <span>${roomData.date || 'N/A'}</span> {/* Added default for date */}
@@ -642,7 +656,6 @@ async function openEditModal(key) {
             showAlert('ไม่พบข้อมูลที่ต้องการแก้ไข', 'error');
             return;
         }
-
         // Permission Check for the specific room
         if (!hasPermission('canEditAllBills', data.room)) { // Assuming 'canEditAllBills' is the correct perm for editing any bill one has access to.
                                                        // Or it could be a more specific one like 'canEditOwnRoomBills'
@@ -650,8 +663,13 @@ async function openEditModal(key) {
             return;
         }
 
+        // Populate form fields
+        document.getElementById('edit-room').value = data.room || '';
+        document.getElementById('edit-name').value = data.name || '';
+
         // Populate form fields (only use ids that exist in index.html)
         document.getElementById('edit-key').value = key;
+
         document.getElementById('edit-date').value = data.date || '';
         document.getElementById('edit-due-date').value = data.dueDate || '';
         document.getElementById('edit-current').value = data.current || '';
@@ -699,10 +717,17 @@ async function saveEdit() {
             return;
         }
 
-    try {
+        // Permission Check for the specific room
+        if (!hasPermission('canEditAllBills', originalData.room)) {
+            showAlert(`คุณไม่มีสิทธิ์บันทึกการแก้ไขข้อมูลของห้อง ${originalData.room}`, 'error');
+            return;
+        }
+
         // Get form values
-        const room = document.getElementById('edit-room').value;
+        const room = document.getElementById('edit-room').value; // Room number might be changed by admin
         const name = document.getElementById('edit-name').value;
+        // Get form values (use correct ids from index.html)
+        const key = document.getElementById('edit-key').value;
         const date = document.getElementById('edit-date').value;
         const dueDate = document.getElementById('edit-due-date').value;
         const current = parseFloat(document.getElementById('edit-current').value) || 0;
@@ -1202,7 +1227,21 @@ async function handleEvidenceUpload() {
     console.log('File input:', fileInput);
     console.log('Camera input:', cameraInput);
     console.log('Selected file:', file);
-    console.log('keyForEvidence:', keyForEvidence);
+    console.log('keyForEvidence (bill key):', keyForEvidence);
+    
+    // Additional debugging information
+    if (fileInput) {
+        console.log('FileInput files length:', fileInput.files.length);
+        if (fileInput.files.length > 0) {
+            console.log('FileInput first file:', fileInput.files[0].name);
+        }
+    }
+    if (cameraInput) {
+        console.log('CameraInput files length:', cameraInput.files.length);
+        if (cameraInput.files.length > 0) {
+            console.log('CameraInput first file:', cameraInput.files[0].name);
+        }
+    }
     
     if (!file) {
         console.error('No file selected');
