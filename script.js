@@ -1613,7 +1613,7 @@ function generateQRCode(record) {
         return;
     }
 
-    const promptPayId = '1209701792030' // Consider making this configurable
+    const promptPayId = '3101700701928' // Consider making this configurable
     const electricAmount = parseFloat(record.total) || 0;
     const waterAmount = parseFloat(record.waterTotal) || 0;
     const totalAmount = electricAmount + waterAmount;
