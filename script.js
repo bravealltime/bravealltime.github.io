@@ -108,12 +108,22 @@ async function renderHomeRoomCards() {
 
         const rooms = {};
         bills.forEach(bill => {
+            // Skip bills without room property
+            if (!bill.room) return;
+            
             if (!rooms[bill.room] || new Date(bill.date.split('/').reverse().join('-')) > new Date(rooms[bill.room].date.split('/').reverse().join('-'))) {
                 rooms[bill.room] = bill;
             }
         });
 
-        const sortedRooms = Object.values(rooms).sort((a, b) => a.room.localeCompare(b.room));
+        const sortedRooms = Object.values(rooms)
+            .filter(room => room && room.room) // Filter out invalid rooms
+            .sort((a, b) => {
+                // Safe comparison with fallback
+                const roomA = a.room || '';
+                const roomB = b.room || '';
+                return roomA.localeCompare(roomB);
+            });
 
         cardsContainer.innerHTML = sortedRooms.map(room => {
             const totalAmount = Number(room.total || 0);
@@ -275,6 +285,9 @@ async function loadFromFirebase(room = null) {
         if (!data) return [];
 
         let bills = Object.keys(data).map(key => ({ key, ...data[key] }));
+
+        // Filter out bills without room property
+        bills = bills.filter(bill => bill.room);
 
         if (room) {
             bills = bills.filter(bill => bill.room === room);

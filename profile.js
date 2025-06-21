@@ -153,27 +153,85 @@ function setupEventListeners(user) {
         const file = e.target.files[0];
         if (!file) return;
 
+        // Validate file type
+        if (!file.type.startsWith('image/')) {
+            showAlert('กรุณาเลือกไฟล์รูปภาพเท่านั้น', 'error');
+            return;
+        }
+
+        // Validate file size (max 5MB)
+        if (file.size > 5 * 1024 * 1024) {
+            showAlert('ขนาดไฟล์ต้องไม่เกิน 5MB', 'error');
+            return;
+        }
+
         try {
+            showAlert('กำลังประมวลผลรูปภาพ...', 'info');
+            
+            // Show progress indicator
+            const progressIndicator = document.getElementById('upload-progress');
+            if (progressIndicator) {
+                progressIndicator.classList.remove('hidden');
+            }
+            
             const resizedFile = await resizeImage(file, 400, 400);
-            showAlert('กำลังอัปโหลดรูปภาพ...', 'info', 2000);
+            
+            showAlert('กำลังอัปโหลดรูปภาพ...', 'info');
+            
             const photoURL = await window.auth.uploadProfilePhoto(resizedFile, (progress) => {
-                console.log(`Upload is ${progress}% done`);
+                console.log(`Upload progress: ${progress.toFixed(1)}%`);
+                // You can add a progress bar here if needed
             });
             
+            // Hide progress indicator
+            if (progressIndicator) {
+                progressIndicator.classList.add('hidden');
+            }
+            
             // Update UI immediately
-            document.getElementById('profile-image').src = photoURL;
-            document.getElementById('profile-image').classList.remove('hidden');
-            document.getElementById('profile-icon').classList.add('hidden');
+            const profileImage = document.getElementById('profile-image');
+            const profileIcon = document.getElementById('profile-icon');
+            
+            profileImage.src = photoURL;
+            profileImage.classList.remove('hidden');
+            profileIcon.classList.add('hidden');
             
             // Also update the navbar icon if it exists
             const navUserImg = document.getElementById('nav-user-img');
-            if (navUserImg) navUserImg.src = photoURL;
+            if (navUserImg) {
+                navUserImg.src = photoURL;
+            }
             
             showAlert('อัปเดตรูปโปรไฟล์สำเร็จ!', 'success');
             
+            // Clear the file input
+            e.target.value = '';
+            
         } catch (error) {
-             console.error("Error uploading photo:", error);
-             showAlert(`เกิดข้อผิดพลาด: ${error.message}`, 'error');
+            console.error("Error uploading photo:", error);
+            
+            // Hide progress indicator on error
+            const progressIndicator = document.getElementById('upload-progress');
+            if (progressIndicator) {
+                progressIndicator.classList.add('hidden');
+            }
+            
+            // More specific error messages
+            let errorMessage = 'เกิดข้อผิดพลาดในการอัปโหลดรูปภาพ';
+            if (error.code === 'storage/unauthorized') {
+                errorMessage = 'ไม่มีสิทธิ์อัปโหลดรูปภาพ';
+            } else if (error.code === 'storage/quota-exceeded') {
+                errorMessage = 'พื้นที่เก็บข้อมูลเต็ม';
+            } else if (error.code === 'storage/network-request-failed') {
+                errorMessage = 'เกิดข้อผิดพลาดในการเชื่อมต่อเครือข่าย';
+            } else if (error.message) {
+                errorMessage = error.message;
+            }
+            
+            showAlert(errorMessage, 'error');
+            
+            // Clear the file input on error
+            e.target.value = '';
         }
     });
 }
