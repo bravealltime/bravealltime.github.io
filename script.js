@@ -172,18 +172,20 @@ async function renderHistoryTable(room) {
 
         historyBody.innerHTML = paginatedData.map(bill => `
             <tr class="hover:bg-white/5 transition-colors">
-                <td class="py-3 px-3 text-center">${bill.date || ''}</td>
-                <td class="py-3 px-3 text-center">${bill.current || ''}</td>
-                <td class="py-3 px-3 text-center">${bill.previous || ''}</td>
-                <td class="py-3 px-3 text-center text-yellow-400 font-semibold">${bill.units || ''}</td>
+                <td class="py-3 px-3 text-center border-r border-slate-700">${bill.date || ''}</td>
+
+                <!-- Electricity Data -->
+                <td class="py-3 px-3 text-center text-yellow-400 font-semibold">${bill.units || '-'}</td>
                 <td class="py-3 px-3 text-center">${Number(bill.rate || 0).toFixed(2)}</td>
-                <td class="py-3 px-3 text-center text-green-400 font-bold">${Number(bill.total || 0).toLocaleString()}</td>
-                <td class="py-3 px-3 text-center">${Number(bill.totalAll || 0).toLocaleString()}</td>
+                <td class="py-3 px-3 text-center text-green-400 font-bold border-r border-slate-700">${Number(bill.total || 0).toLocaleString()}</td>
+
+                <!-- Water Data -->
                 <td class="py-3 px-3 text-center text-cyan-400 font-semibold">${bill.waterUnits || '-'}</td>
                 <td class="py-3 px-3 text-center">${Number(bill.waterRate || 0).toFixed(2)}</td>
-                <td class="py-3 px-3 text-center text-sky-400 font-bold">${Number(bill.waterTotal || 0).toLocaleString()}</td>
+                <td class="py-3 px-3 text-center text-sky-400 font-bold border-r border-slate-700">${Number(bill.waterTotal || 0).toLocaleString()}</td>
+
                 <td class="py-3 px-3 text-center">
-                    <div class="flex items-center justify-center gap-4">
+                    <div class="flex items-center justify-center gap-3">
                         <button onclick='generateQRCode(${JSON.stringify(bill)})' class="text-purple-400 hover:text-purple-300 transition-colors" title="สร้าง QR Code ชำระเงิน"><i class="fas fa-qrcode"></i></button>
                         ${bill.evidenceUrl ?
                             `<a href="${bill.evidenceUrl}" target="_blank" class="text-blue-400 hover:text-blue-300 transition-colors" title="ดูหลักฐาน"><i class="fas fa-eye"></i></a>` :

@@ -175,17 +175,20 @@
                 <table class="w-full min-w-[800px] table-auto rounded-xl overflow-hidden">
                     <thead class="bg-slate-900">
                         <tr class="border-b border-slate-700">
-                            <th class="py-3 px-3 font-medium text-slate-300 text-sm text-center">วันที่</th>
-                            <th class="py-3 px-3 font-medium text-slate-300 text-sm text-center">เลขมิเตอร์ปัจจุบัน</th>
-                            <th class="py-3 px-3 font-medium text-slate-300 text-sm text-center">ครั้งที่แล้ว</th>
-                            <th class="py-3 px-3 font-medium text-slate-300 text-sm text-center">จำนวนหน่วย</th>
-                            <th class="py-3 px-3 font-medium text-slate-300 text-sm text-center">ค่าไฟ/หน่วย</th>
-                            <th class="py-3 px-3 font-medium text-slate-300 text-sm text-center">ค่าไฟ (ห้อง)</th>
-                            <th class="py-3 px-3 font-medium text-slate-300 text-sm text-center">ค่าไฟ (บ้าน)</th>
-                            <th class="py-3 px-3 font-medium text-slate-300 text-sm text-center">หน่วยน้ำ</th>
-                            <th class="py-3 px-3 font-medium text-slate-300 text-sm text-center">ค่าน้ำ/หน่วย</th>
-                            <th class="py-3 px-3 font-medium text-slate-300 text-sm text-center">ค่าน้ำ (ห้อง)</th>
-                            <th class="py-3 px-3 font-medium text-slate-300 text-sm text-center">จัดการ</th>
+                            <th rowspan="2" class="py-3 px-3 font-medium text-slate-300 text-sm text-center align-middle border-r border-slate-700">วันที่</th>
+                            <th colspan="3" class="py-2 px-3 font-semibold text-sky-300 text-sm text-center border-b border-r border-slate-700">ค่าไฟฟ้า</th>
+                            <th colspan="3" class="py-2 px-3 font-semibold text-teal-300 text-sm text-center border-b border-r border-slate-700">ค่าน้ำ</th>
+                            <th rowspan="2" class="py-3 px-3 font-medium text-slate-300 text-sm text-center align-middle">จัดการ</th>
+                        </tr>
+                        <tr class="border-b border-slate-700">
+                            <!-- ค่าไฟฟ้า -->
+                            <th class="py-2 px-2 font-medium text-slate-400 text-xs text-center">หน่วยไฟ</th>
+                            <th class="py-2 px-2 font-medium text-slate-400 text-xs text-center">เรทไฟ</th>
+                            <th class="py-2 px-2 font-medium text-slate-400 text-xs text-center border-r border-slate-700">ค่าไฟห้อง</th>
+                            <!-- ค่าน้ำ -->
+                            <th class="py-2 px-2 font-medium text-slate-400 text-xs text-center">หน่วยน้ำ</th>
+                            <th class="py-2 px-2 font-medium text-slate-400 text-xs text-center">เรทน้ำ</th>
+                            <th class="py-2 px-2 font-medium text-slate-400 text-xs text-center border-r border-slate-700">ค่าน้ำห้อง</th>
                         </tr>
                     </thead>
                     <tbody id="history-body" class="divide-y divide-slate-700">
