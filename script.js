@@ -203,10 +203,10 @@ async function renderHomeRoomCards() {
             }
 
             return `
-            <div class="bg-slate-800 rounded-2xl shadow-lg p-5 flex flex-col justify-between hover:bg-slate-700/50 transition-all border border-slate-700 hover:border-blue-500 cursor-pointer" onclick="viewRoomHistory('${roomData.room}')">
+            <div class="bg-slate-800 rounded-2xl shadow-lg p-5 flex flex-col justify-between hover:bg-slate-700/50 transition-all border border-slate-700 hover:border-blue-500 cursor-pointer" onclick="viewRoomHistory('${room.room}')">
                 <div>
                     <div class="flex justify-between items-start">
-                        <span class="text-3xl font-bold text-blue-400">${roomData.room}</span>
+                        <span class="text-3xl font-bold text-blue-400">${room.room}</span>
                         <div class="text-xs text-gray-400 text-right">
                             <span>อัปเดตล่าสุด</span><br>
                             <span>${roomData.date || 'N/A'}</span> {/* Added default for date */}
@@ -245,6 +245,16 @@ async function renderHomeRoomCards() {
                         <span class="text-sm font-medium">${dueDateInfo.text}</span>
                     </div>
                 </div>` : ''}
+                <div class="mt-4 pt-4 border-t border-slate-700 flex gap-2">
+                    <button onclick="viewRoomHistory('${room.room}')" class="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-sm transition-all flex items-center justify-center gap-1">
+                        <i class="fas fa-history"></i> ประวัติ
+                    </button>
+                    ${hasPermission('canDeleteBills') ? 
+                        `<button onclick="openDeleteRoomConfirmModal('${room.room}')" class="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium text-sm transition-all flex items-center justify-center" title="ลบห้อง">
+                            <i class="fas fa-trash"></i>
+                        </button>` : ''
+                    }
+                </div>
             </div>
         `}).join('');
 
@@ -319,7 +329,7 @@ async function renderHistoryTable(room) {
                             `<button onclick="openEvidenceModal('${bill.key}')" class="text-green-400 hover:text-green-300 transition-colors" title="แนบหลักฐาน"><i class="fas fa-upload"></i></button>` : ''
                         }
                         ${bill.evidenceUrl ? 
-                            `<button onclick="viewEvidence('${bill.evidenceUrl}', '${bill.evidenceFileName || 'หลักฐานการชำระเงิน'}')" class="text-blue-400 hover:text-blue-300 transition-colors" title="ดูหลักฐาน"><i class="fas fa-eye"></i></button>` : ''
+                            `<button onclick="viewEvidence('${bill.evidenceUrl}', '${bill.evidenceFileName ? bill.evidenceFileName : 'หลักฐานการชำระเงิน'}')" class="text-blue-400 hover:text-blue-300 transition-colors" title="ดูหลักฐาน"><i class="fas fa-eye"></i></button>` : ''
                         }
                         ${hasPermission('canUploadEvidence', room) && bill.evidenceUrl ? // Permission to delete evidence might be same as upload or a new one
                             `<button onclick="deleteEvidence('${bill.key}')" class="text-orange-400 hover:text-orange-300 transition-colors" title="ลบหลักฐาน"><i class="fas fa-trash-alt"></i></button>` : ''
@@ -640,23 +650,20 @@ async function openEditModal(key) {
             return;
         }
 
-        // Populate form fields
-        document.getElementById('edit-room').value = data.room || '';
-        document.getElementById('edit-name').value = data.name || '';
+        // Populate form fields (only use ids that exist in index.html)
+        document.getElementById('edit-key').value = key;
         document.getElementById('edit-date').value = data.date || '';
+        document.getElementById('edit-due-date').value = data.dueDate || '';
         document.getElementById('edit-current').value = data.current || '';
         document.getElementById('edit-previous').value = data.previous || '';
         document.getElementById('edit-rate').value = data.rate || '';
-        document.getElementById('edit-total').value = data.total || '';
-        document.getElementById('edit-totalall').value = data.totalall || '';
-        document.getElementById('edit-due-date').value = data.dueDate || '';
+        document.getElementById('edit-total-all').value = data.totalAll || '';
         
         // Water fields
-        document.getElementById('edit-water-current').value = data.waterCurrent || '';
-        document.getElementById('edit-water-previous').value = data.waterPrevious || '';
+        document.getElementById('edit-current-water').value = data.currentWater || '';
+        document.getElementById('edit-previous-water').value = data.previousWater || '';
         document.getElementById('edit-water-rate').value = data.waterRate || '';
-        document.getElementById('edit-water-total').value = data.waterTotal || '';
-        document.getElementById('edit-water-totalall').value = data.waterTotalall || '';
+        document.getElementById('edit-total-water-bill-household').value = data.totalWaterBillHousehold || '';
 
         // Store the key for saving
         editingIndex = key;
@@ -692,58 +699,55 @@ async function saveEdit() {
             return;
         }
 
-        // Permission Check for the specific room
-        if (!hasPermission('canEditAllBills', originalData.room)) {
-            showAlert(`คุณไม่มีสิทธิ์บันทึกการแก้ไขข้อมูลของห้อง ${originalData.room}`, 'error');
-            return;
-        }
-
+    try {
         // Get form values
-        const room = document.getElementById('edit-room').value; // Room number might be changed by admin
+        const room = document.getElementById('edit-room').value;
         const name = document.getElementById('edit-name').value;
         const date = document.getElementById('edit-date').value;
+        const dueDate = document.getElementById('edit-due-date').value;
         const current = parseFloat(document.getElementById('edit-current').value) || 0;
         const previous = parseFloat(document.getElementById('edit-previous').value) || 0;
         const rate = parseFloat(document.getElementById('edit-rate').value) || 0;
-        const total = parseFloat(document.getElementById('edit-total').value) || 0;
-        const totalall = parseFloat(document.getElementById('edit-totalall').value) || 0;
-        const dueDate = document.getElementById('edit-due-date').value;
+        const totalAll = parseFloat(document.getElementById('edit-total-all').value) || 0;
         
         // Water values
-        const waterCurrent = parseFloat(document.getElementById('edit-water-current').value) || 0;
-        const waterPrevious = parseFloat(document.getElementById('edit-water-previous').value) || 0;
+        const currentWater = parseFloat(document.getElementById('edit-current-water').value) || 0;
+        const previousWater = parseFloat(document.getElementById('edit-previous-water').value) || 0;
         const waterRate = parseFloat(document.getElementById('edit-water-rate').value) || 0;
-        const waterTotal = parseFloat(document.getElementById('edit-water-total').value) || 0;
-        const waterTotalall = parseFloat(document.getElementById('edit-water-totalall').value) || 0;
+        const totalWaterBillHousehold = parseFloat(document.getElementById('edit-total-water-bill-household').value) || 0;
 
         // Validate required fields
-        if (!room || !name || !date) {
+        if (!date || !dueDate) {
             showAlert('กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน', 'error');
             return;
         }
 
-        // Calculate units
+        // Calculate units and totals
         const units = current - previous;
-        const waterUnits = waterCurrent - waterPrevious;
+        const total = units * rate;
+        const waterUnits = currentWater - previousWater;
+        const waterTotal = waterUnits * waterRate;
+
+        // Get existing data to preserve room and name
+        const snapshot = await db.ref(`electricityData/${editingIndex}`).once('value');
+        const existingData = snapshot.val();
 
         // Prepare update data
         const updateData = {
-            room,
-            name,
             date,
+            dueDate,
             current,
             previous,
             units,
             rate,
             total,
-            totalall,
-            dueDate,
-            waterCurrent,
-            waterPrevious,
+            totalAll,
+            currentWater,
+            previousWater,
             waterUnits,
             waterRate,
             waterTotal,
-            waterTotalall,
+            totalWaterBillHousehold,
             updatedAt: new Date().toISOString(),
             updatedBy: auth.currentUser?.uid || 'unknown'
         };
@@ -932,18 +936,71 @@ function viewEvidence(url, fileName = 'หลักฐานการชำร�
         return;
     }
     
-    // Open evidence in new tab
-    try {
-        const newWindow = window.open(url, '_blank');
-        if (!newWindow) {
-            showAlert('ไม่สามารถเปิดหลักฐานได้ กรุณาตรวจสอบการตั้งค่า popup blocker', 'error');
-        }
-    } catch (error) {
-        console.error('Error opening evidence:', error);
-        showAlert('เกิดข้อผิดพลาดในการเปิดหลักฐาน', 'error');
+    // Show evidence in modal instead of new tab
+    const modal = document.getElementById('evidence-view-modal');
+    const container = document.getElementById('evidence-view-container');
+    const downloadBtn = document.getElementById('download-evidence-btn');
+    
+    if (!modal || !container) {
+        console.error('Evidence view modal elements not found');
+        showAlert('เกิดข้อผิดพลาดในการแสดงรูปภาพ', 'error');
+        return;
     }
     
+    // Clear previous content
+    container.innerHTML = '';
+    
+    // Create image element
+    const img = document.createElement('img');
+    img.src = url;
+    img.alt = fileName;
+    img.className = 'max-w-full max-h-[60vh] object-contain rounded-lg shadow-lg';
+    img.style.maxWidth = '100%';
+    img.style.height = 'auto';
+    
+    // Add loading state
+    img.onload = function() {
+        console.log('Image loaded successfully');
+    };
+    
+    img.onerror = function() {
+        console.error('Failed to load image');
+        container.innerHTML = `
+            <div class="text-center text-red-400">
+                <i class="fas fa-exclamation-triangle text-4xl mb-2"></i>
+                <p>ไม่สามารถโหลดรูปภาพได้</p>
+            </div>
+        `;
+    };
+    
+    // Add image to container
+    container.appendChild(img);
+    
+    // Set up download button
+    if (downloadBtn) {
+        downloadBtn.onclick = function() {
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = fileName || 'evidence.jpg';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        };
+    }
+    
+    // Show modal
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+    
     console.log('=== viewEvidence ended ===');
+}
+
+function closeEvidenceViewModal() {
+    const modal = document.getElementById('evidence-view-modal');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+    }
 }
 
 function openEvidenceModal(key) {
@@ -1131,12 +1188,21 @@ async function handleEvidenceUpload() {
     
     const fileInput = document.getElementById('evidence-image-input');
     const cameraInput = document.getElementById('evidence-camera-input');
-    const file = fileInput.files[0] || cameraInput.files[0];
+    
+    // Check both file inputs for selected files
+    let file = null;
+    if (fileInput && fileInput.files && fileInput.files.length > 0) {
+        file = fileInput.files[0];
+        console.log('File found in fileInput:', file.name);
+    } else if (cameraInput && cameraInput.files && cameraInput.files.length > 0) {
+        file = cameraInput.files[0];
+        console.log('File found in cameraInput:', file.name);
+    }
     
     console.log('File input:', fileInput);
     console.log('Camera input:', cameraInput);
     console.log('Selected file:', file);
-    console.log('keyForEvidence (bill key):', keyForEvidence);
+    console.log('keyForEvidence:', keyForEvidence);
     
     if (!file) {
         console.error('No file selected');
@@ -1454,7 +1520,27 @@ function handleFileSelect(file) {
     
     preview.classList.remove('hidden');
     placeholder.classList.add('hidden');
+    
+    // Enable save button and show success message
     saveBtn.disabled = false;
+    saveBtn.innerHTML = '<i class="fas fa-save"></i> บันทึก';
+    console.log('Save button enabled:', !saveBtn.disabled);
+    
+    // Double-check that the file is properly assigned to the input
+    const fileInput = document.getElementById('evidence-image-input');
+    const cameraInput = document.getElementById('evidence-camera-input');
+    
+    if (fileInput && fileInput.files && fileInput.files.length === 0) {
+        // If file input is empty, try to assign the file
+        try {
+            const dataTransfer = new DataTransfer();
+            dataTransfer.items.add(file);
+            fileInput.files = dataTransfer.files;
+            console.log('File reassigned to fileInput:', fileInput.files.length);
+        } catch (error) {
+            console.error('Error reassigning file to input:', error);
+        }
+    }
     
     console.log('Preview created successfully');
     console.log('=== handleFileSelect ended ===');
@@ -1616,7 +1702,18 @@ function setupEvidenceModalListeners() {
             const files = e.dataTransfer.files;
             console.log('Files dropped:', files.length);
             if (files.length) {
-                handleFileSelect(files[0]);
+                // Create a new FileList-like object and assign to file input
+                const file = files[0];
+                
+                // Create a new DataTransfer object
+                const dataTransfer = new DataTransfer();
+                dataTransfer.items.add(file);
+                
+                // Assign the file to the file input
+                fileInput.files = dataTransfer.files;
+                
+                console.log('File assigned to input:', fileInput.files.length);
+                handleFileSelect(file);
             }
         });
         console.log('Drag and drop listeners added');
@@ -1934,4 +2031,197 @@ async function deleteEvidence(key) {
     }
     
     console.log('=== deleteEvidence ended ===');
+}
+
+// Room management functions
+function openEditRoomNameModal(roomNumber, currentName) {
+    if (!hasPermission('canEditAllBills')) {
+        showAlert('คุณไม่มีสิทธิ์แก้ไขข้อมูล', 'error');
+        return;
+    }
+    
+    // Create modal if it doesn't exist
+    let modal = document.getElementById('edit-room-name-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'edit-room-name-modal';
+        modal.className = 'fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50';
+        modal.innerHTML = `
+            <div class="bg-slate-800 border border-slate-700 rounded-2xl p-6 w-full max-w-md mx-4 shadow-lg">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold text-white">แก้ไขชื่อห้อง</h2>
+                    <button class="text-2xl text-slate-400 hover:text-white transition-colors" onclick="closeEditRoomNameModal()">&times;</button>
+                </div>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-300 mb-2">เลขห้อง</label>
+                        <input type="text" id="edit-room-number" readonly class="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white cursor-not-allowed">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-300 mb-2">ชื่อผู้เช่า</label>
+                        <input type="text" id="edit-room-name-input" class="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition text-white" placeholder="กรอกชื่อผู้เช่า">
+                    </div>
+                </div>
+                <div class="flex gap-3 mt-6">
+                    <button onclick="closeEditRoomNameModal()" class="flex-1 px-4 py-2 bg-slate-600 hover:bg-slate-500 text-white rounded-lg font-medium transition-colors">
+                        ยกเลิก
+                    </button>
+                    <button onclick="saveRoomNameEdit()" class="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors">
+                        บันทึก
+                    </button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    }
+    
+    // Populate form
+    document.getElementById('edit-room-number').value = roomNumber;
+    document.getElementById('edit-room-name-input').value = currentName;
+    
+    // Show modal
+    modal.classList.remove('hidden');
+}
+
+function closeEditRoomNameModal() {
+    const modal = document.getElementById('edit-room-name-modal');
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+}
+
+async function saveRoomNameEdit() {
+    if (!hasPermission('canEditAllBills')) {
+        showAlert('คุณไม่มีสิทธิ์แก้ไขข้อมูล', 'error');
+        return;
+    }
+    
+    const roomNumber = document.getElementById('edit-room-number').value;
+    const newName = document.getElementById('edit-room-name-input').value.trim();
+    
+    if (!newName) {
+        showAlert('กรุณากรอกชื่อผู้เช่า', 'error');
+        return;
+    }
+    
+    try {
+        // Get all bills for this room
+        const bills = await loadFromFirebase();
+        const roomBills = bills.filter(bill => bill.room === roomNumber);
+        
+        if (roomBills.length === 0) {
+            showAlert('ไม่พบข้อมูลห้องนี้', 'error');
+            return;
+        }
+        
+        // Update all bills for this room with new name
+        const updates = {};
+        roomBills.forEach(bill => {
+            updates[`/${bill.key}/name`] = newName;
+        });
+        
+        await db.ref('electricityData').update(updates);
+        
+        showAlert('แก้ไขชื่อห้องเรียบร้อยแล้ว', 'success');
+        closeEditRoomNameModal();
+        
+        // Refresh room cards
+        renderHomeRoomCards();
+        
+    } catch (error) {
+        console.error('Error updating room name:', error);
+        showAlert('เกิดข้อผิดพลาดในการแก้ไขชื่อห้อง', 'error');
+    }
+}
+
+function openDeleteRoomConfirmModal(roomNumber) {
+    if (!hasPermission('canDeleteBills')) {
+        showAlert('คุณไม่มีสิทธิ์ลบข้อมูล', 'error');
+        return;
+    }
+    
+    // Create modal if it doesn't exist
+    let modal = document.getElementById('delete-room-confirm-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'delete-room-confirm-modal';
+        modal.className = 'fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50';
+        modal.innerHTML = `
+            <div class="bg-slate-800 border border-slate-700 rounded-2xl p-6 w-full max-w-md mx-4 shadow-lg text-center">
+                <div class="text-red-500 mb-4">
+                    <i class="fas fa-exclamation-triangle fa-3x"></i>
+                </div>
+                <h2 class="text-xl font-bold text-white mb-2">ยืนยันการลบห้อง</h2>
+                <p class="text-slate-400 mb-4">คุณแน่ใจหรือไม่ว่าต้องการลบห้อง <span id="delete-room-number" class="font-bold text-white"></span> และข้อมูลทั้งหมดที่เกี่ยวข้อง?</p>
+                <p class="text-red-400 text-sm mb-6">การกระทำนี้ไม่สามารถย้อนกลับได้</p>
+                <div class="flex justify-center gap-4">
+                    <button onclick="closeDeleteRoomConfirmModal()" class="px-6 py-2 bg-slate-600 hover:bg-slate-500 text-white rounded-lg font-medium transition-colors">
+                        ยกเลิก
+                    </button>
+                    <button onclick="confirmDeleteRoom()" class="px-6 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors">
+                        ยืนยันการลบ
+                    </button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    }
+    
+    // Set room number
+    document.getElementById('delete-room-number').textContent = roomNumber;
+    
+    // Store room number for deletion
+    window.roomToDelete = roomNumber;
+    
+    // Show modal
+    modal.classList.remove('hidden');
+}
+
+function closeDeleteRoomConfirmModal() {
+    const modal = document.getElementById('delete-room-confirm-modal');
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+    window.roomToDelete = null;
+}
+
+async function confirmDeleteRoom() {
+    if (!hasPermission('canDeleteBills')) {
+        showAlert('คุณไม่มีสิทธิ์ลบข้อมูล', 'error');
+        return;
+    }
+    
+    const roomNumber = window.roomToDelete;
+    if (!roomNumber) {
+        showAlert('ไม่พบข้อมูลห้องที่ต้องการลบ', 'error');
+        return;
+    }
+    
+    try {
+        // Get all bills for this room
+        const bills = await loadFromFirebase();
+        const roomBills = bills.filter(bill => bill.room === roomNumber);
+        
+        if (roomBills.length === 0) {
+            showAlert('ไม่พบข้อมูลห้องนี้', 'error');
+            return;
+        }
+        
+        // Delete all bills for this room
+        const deletePromises = roomBills.map(bill => 
+            db.ref(`electricityData/${bill.key}`).remove()
+        );
+        
+        await Promise.all(deletePromises);
+        
+        showAlert(`ลบห้อง ${roomNumber} และข้อมูลทั้งหมดเรียบร้อยแล้ว`, 'success');
+        closeDeleteRoomConfirmModal();
+        
+        // Refresh room cards
+        renderHomeRoomCards();
+        
+    } catch (error) {
+        console.error('Error deleting room:', error);
+        showAlert('เกิดข้อผิดพลาดในการลบห้อง', 'error');
+    }
 }
