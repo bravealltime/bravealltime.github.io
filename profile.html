@@ -34,14 +34,18 @@
             <div class="bg-slate-800 rounded-2xl p-6 shadow-lg border border-slate-700 mb-8">
                 <div class="flex flex-col sm:flex-row items-center space-y-4 sm:space-y-0 sm:space-x-6">
                     <div class="relative">
-                        <div id="profile-image-container" class="w-24 h-24 rounded-full bg-slate-700 flex items-center justify-center overflow-hidden border-2 border-slate-600">
+                        <div id="profile-image-container" class="w-24 h-24 rounded-full bg-slate-700 flex items-center justify-center overflow-hidden border-2 border-slate-600 shadow-lg">
                             <img id="profile-image" src="" alt="Profile" class="w-full h-full object-cover hidden">
                             <i id="profile-icon" class="fas fa-user text-4xl text-slate-500"></i>
                         </div>
-                        <label for="photo-upload" class="absolute bottom-0 right-0 bg-blue-600 hover:bg-blue-700 text-white rounded-full p-2 cursor-pointer transition-transform hover:scale-110">
+                        <label for="photo-upload" class="absolute bottom-0 right-0 bg-blue-600 hover:bg-blue-700 text-white rounded-full p-2 cursor-pointer transition-all hover:scale-110 shadow-lg" title="เปลี่ยนรูปโปรไฟล์">
                             <i class="fas fa-camera text-sm"></i>
                             <input type="file" id="photo-upload" class="hidden" accept="image/*">
                         </label>
+                        <!-- Upload progress indicator -->
+                        <div id="upload-progress" class="absolute inset-0 bg-black/50 rounded-full flex items-center justify-center hidden">
+                            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
+                        </div>
                     </div>
                     <div class="flex-1 text-center sm:text-left">
                         <h1 id="user-name-display" class="text-3xl font-bold text-white mb-1">กำลังโหลด...</h1>
@@ -167,12 +171,12 @@
             authDomain: "electricity-bill-calcula-ea4a2.firebaseapp.com",
             databaseURL: "https://electricity-bill-calcula-ea4a2-default-rtdb.asia-southeast1.firebasedatabase.app",
             projectId: "electricity-bill-calcula-ea4a2",
-            storageBucket: "electricity-bill-calcula-ea4a2.appspot.com",
+            storageBucket: "electricity-bill-calcula-ea4a2.firebasestorage.app",
             messagingSenderId: "79440126022",
             appId: "1:79440126022:web:7ffbc16c6661bc75dc6a47",
             measurementId: "G-7JD6H3Q0PM"
         };
-        let db, auth, storage; // Make them available globally for other scripts
+        let db, auth, storage;
         try {
             if (!firebase.apps.length) {
                 firebase.initializeApp(firebaseConfig);
