@@ -35,6 +35,14 @@ document.addEventListener('DOMContentLoaded', async function() {
         // Load page-specific data after authentication is confirmed
         initializePageContent();
     }
+
+    // Add a global click listener to close dropdowns when clicking outside
+    document.addEventListener('click', (event) => {
+        // Check if the click is on the dropdown itself or its trigger
+        if (!event.target.closest('#global-actions-menu') && !event.target.closest('[onclick^="openActionsMenu"]')) {
+             closeActionsMenu();
+        }
+    });
 });
 
 function initializePageContent() {
@@ -194,6 +202,7 @@ async function renderHomeRoomCards() {
             const totalAmount = Number(roomData.total || 0);
             const amountColor = getAmountColor(totalAmount);
             const dueDateInfo = getDueDateInfo(roomData.dueDate);
+            const isPaymentConfirmed = roomData.paymentConfirmed === true;
 
             // Defensive check for essential data that will be directly accessed.
             // Crucially, roomData.room must exist for the onclick handler.
@@ -221,6 +230,12 @@ async function renderHomeRoomCards() {
                         </div>
                     </div>
                     <p class="text-lg text-white font-semibold mt-2 truncate">${roomData.name || 'ไม่มีชื่อ'}</p>
+                    ${isPaymentConfirmed ? 
+                        `<div class="mt-2 flex items-center gap-2 text-emerald-400">
+                            <i class="fas fa-check-circle"></i>
+                            <span class="text-sm font-medium">ยืนยันการชำระเงินแล้ว</span>
+                        </div>` : ''
+                    }
                 </div>
                 <div class="mt-4 pt-4 border-t border-slate-700 space-y-2">
                      <div class="flex justify-between items-center text-sm">
@@ -314,44 +329,73 @@ async function renderHistoryTable(room) {
         const endIndex = startIndex + ITEMS_PER_PAGE;
         const paginatedData = bills.slice(startIndex, endIndex);
 
-        historyBody.innerHTML = paginatedData.map(bill => `
-            <tr class="hover:bg-white/5 transition-colors">
-                <td class="py-3 px-3 text-center border-r border-slate-700">${bill.date || ''}</td>
+        historyBody.innerHTML = paginatedData.map(bill => {
+            // Check if payment is confirmed
+            const isPaymentConfirmed = bill.paymentConfirmed === true;
+            const canConfirmPayment = hasPermission('canConfirmPayment', room) && bill.evidenceUrl && !isPaymentConfirmed;
+            const canDeleteEvidence = hasPermission('canUploadEvidence', room) && bill.evidenceUrl && !isPaymentConfirmed;
+            const canDeleteRow = hasPermission('canDeleteBills', room) && (!isPaymentConfirmed || window.currentUserRole === 'admin' || window.currentUserRole === '1');
+            
+            const billJson = JSON.stringify(bill).replace(/"/g, '&quot;');
 
-                <!-- Electricity Data -->
-                <td class="py-3 px-3 text-center text-yellow-400 font-semibold">${bill.units || '-'}</td>
-                <td class="py-3 px-3 text-center">${Number(bill.rate || 0).toFixed(2)}</td>
-                <td class="py-3 px-3 text-center text-green-400 font-bold border-r border-slate-700">${Number(bill.total || 0).toLocaleString()}</td>
+            const actionsHtml = `
+                <div class="flex items-center justify-center gap-4">
+                    ${hasPermission('canGenerateQRCode', room) ? `
+                        <button onclick='generateQRCode(${billJson})' class="text-purple-400 hover:text-purple-300 transition-colors" title="สร้าง QR Code ชำระเงิน">
+                            <i class="fas fa-qrcode fa-lg"></i>
+                        </button>
+                    ` : ''}
 
-                <!-- Water Data -->
-                <td class="py-3 px-3 text-center text-cyan-400 font-semibold">${bill.waterUnits || '-'}</td>
-                <td class="py-3 px-3 text-center">${Number(bill.waterRate || 0).toFixed(2)}</td>
-                <td class="py-3 px-3 text-center text-sky-400 font-bold border-r border-slate-700">${Number(bill.waterTotal || 0).toLocaleString()}</td>
+                    ${!bill.evidenceUrl && hasPermission('canUploadEvidence', room) ? `
+                        <button onclick="openEvidenceModal('${bill.key}')" class="flex items-center gap-1.5 px-2.5 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 rounded-lg font-semibold shadow-md transition-all" title="แนบหลักฐาน">
+                            <i class="fas fa-upload"></i>
+                            <span>แนบหลักฐาน</span>
+                        </button>
+                    ` : ''}
 
-                <td class="py-3 px-3 text-center">
-                    <div class="flex items-center justify-center gap-3">
-                        ${hasPermission('canGenerateQRCode', room) ?
-                            `<button onclick='generateQRCode(${JSON.stringify(bill)})' class="text-purple-400 hover:text-purple-300 transition-colors" title="สร้าง QR Code ชำระเงิน"><i class="fas fa-qrcode"></i></button>` : ''
-                        }
-                        ${hasPermission('canUploadEvidence', room) ?
-                            `<button onclick="openEvidenceModal('${bill.key}')" class="text-green-400 hover:text-green-300 transition-colors" title="แนบหลักฐาน"><i class="fas fa-upload"></i></button>` : ''
-                        }
-                        ${bill.evidenceUrl ? 
-                            `<button onclick="viewEvidence('${bill.evidenceUrl}', '${bill.evidenceFileName ? bill.evidenceFileName : 'หลักฐานการชำระเงิน'}')" class="text-blue-400 hover:text-blue-300 transition-colors" title="ดูหลักฐาน"><i class="fas fa-eye"></i></button>` : ''
-                        }
-                        ${hasPermission('canUploadEvidence', room) && bill.evidenceUrl ? // Permission to delete evidence might be same as upload or a new one
-                            `<button onclick="deleteEvidence('${bill.key}')" class="text-orange-400 hover:text-orange-300 transition-colors" title="ลบหลักฐาน"><i class="fas fa-trash-alt"></i></button>` : ''
-                        }
-                        ${hasPermission('canEditAllBills', room) ?  // Note: 'canEditAllBills' might be too broad for L1, consider a more specific 'canEditOwnRoomBills'
-                            `<button onclick="openEditModal('${bill.key}')" class="text-blue-400 hover:text-blue-300 transition-colors" title="แก้ไข"><i class="fas fa-edit"></i></button>` : ''
-                        }
-                        ${hasPermission('canDeleteBills', room) ? // Similar to edit, 'canDeleteOwnRoomBills'
-                            `<button onclick="openDeleteConfirmModal('${bill.key}')" class="text-red-400 hover:text-red-300 transition-colors" title="ลบ"><i class="fas fa-trash"></i></button>` : ''
-                        }
+                    ${bill.evidenceUrl ? `
+                        <button onclick="viewEvidence('${bill.evidenceUrl}', '${bill.evidenceFileName || 'หลักฐาน'}')" class="text-blue-400 hover:text-blue-300 transition-colors" title="ดูหลักฐาน">
+                            <i class="fas fa-eye fa-lg"></i>
+                        </button>
+                    ` : ''}
+
+                    ${canConfirmPayment ? `
+                        <button onclick="confirmPayment('${bill.key}')" class="text-emerald-400 hover:text-emerald-300 transition-colors" title="ยืนยันการชำระเงิน">
+                            <i class="fas fa-check-circle fa-lg"></i>
+                        </button>
+                    ` : ''}
+
+                    ${isPaymentConfirmed ? `
+                        <span class="text-emerald-500" title="ยืนยันการชำระเงินแล้ว โดย ${bill.paymentConfirmedBy || 'แอดมิน'} เมื่อ ${bill.paymentConfirmedAt ? new Date(bill.paymentConfirmedAt).toLocaleString() : ''}">
+                            <i class="fas fa-check-double fa-lg"></i>
+                        </span>
+                    ` : ''}
+
+                    <!-- More Actions Dropdown -->
+                    <div class="relative inline-block text-left">
+                        <button onclick='openActionsMenu(event, ${billJson})' class="text-slate-400 hover:text-white transition-colors h-8 w-8 flex items-center justify-center rounded-full hover:bg-slate-700">
+                            <i class="fas fa-ellipsis-v"></i>
+                        </button>
                     </div>
+                </div>
+            `;
+
+            return `
+            <tr class="hover:bg-white/5 transition-colors">
+                <td class="py-3 px-3 text-center border-r border-slate-700 align-middle">${bill.date || ''}</td>
+                <!-- Electricity Data -->
+                <td class="py-3 px-3 text-center text-yellow-400 font-semibold align-middle">${bill.units || '-'}</td>
+                <td class="py-3 px-3 text-center align-middle">${Number(bill.rate || 0).toFixed(2)}</td>
+                <td class="py-3 px-3 text-center text-green-400 font-bold border-r border-slate-700 align-middle">${Number(bill.total || 0).toLocaleString()}</td>
+                <!-- Water Data -->
+                <td class="py-3 px-3 text-center text-cyan-400 font-semibold align-middle">${bill.waterUnits || '-'}</td>
+                <td class="py-3 px-3 text-center align-middle">${Number(bill.waterRate || 0).toFixed(2)}</td>
+                <td class="py-3 px-3 text-center text-sky-400 font-bold border-r border-slate-700 align-middle">${Number(bill.waterTotal || 0).toLocaleString()}</td>
+                <td class="py-3 px-3 text-center align-middle">
+                    ${actionsHtml}
                 </td>
             </tr>
-        `).join('');
+        `}).join('');
 
         updatePagination(bills.length, totalPages);
 
@@ -405,17 +449,37 @@ async function deleteBill(key) {
         return;
     }
     
-    if (!confirm('คุณต้องการลบข้อมูลนี้ใช่หรือไม่?')) return;
-
     try {
-        await db.ref(`electricityData/${key}`).remove();
-        showAlert('ลบข้อมูลเรียบร้อยแล้ว', 'success');
+        // Fetch bill data to check payment confirmation status
+        const snapshot = await db.ref(`electricityData/${key}`).once('value');
+        const billData = snapshot.val();
         
-        const params = new URLSearchParams(window.location.search);
-        const room = params.get('room');
-        currentPage = 1;
-        renderHistoryTable(room);
-        updatePreviousReadingFromDB(room);
+        if (!billData) {
+            showAlert('ไม่พบข้อมูลที่ต้องการลบ', 'error');
+            return;
+        }
+
+        // Check if payment is confirmed and user is not admin or level 1 owner
+        if (billData.paymentConfirmed === true && window.currentUserRole !== 'admin' && window.currentUserRole !== '1') {
+            showAlert('ไม่สามารถลบข้อมูลได้ เนื่องจากเจ้าของห้องได้ยืนยันการชำระเงินแล้ว', 'error');
+            return;
+        }
+
+        showConfirmModal({
+            title: 'ยืนยันการลบบิล',
+            text: `คุณแน่ใจหรือไม่ว่าต้องการลบบิลของวันที่ ${billData.date || 'ไม่ระบุ'}? การกระทำนี้ไม่สามารถย้อนกลับได้`,
+            confirmButtonText: 'ลบ',
+            onConfirm: async () => {
+                await db.ref(`electricityData/${key}`).remove();
+                showAlert('ลบข้อมูลเรียบร้อยแล้ว', 'success');
+                
+                const params = new URLSearchParams(window.location.search);
+                const room = params.get('room');
+                currentPage = 1;
+                renderHistoryTable(room);
+                updatePreviousReadingFromDB(room);
+            }
+        });
     } catch (error) {
         console.error('Error deleting bill:', error);
         showAlert('เกิดข้อผิดพลาดในการลบข้อมูล', 'error');
@@ -660,10 +724,6 @@ async function openEditModal(key) {
             return;
         }
 
-        // Populate form fields
-        document.getElementById('edit-room').value = data.room || '';
-        document.getElementById('edit-name').value = data.name || '';
-
         // Populate form fields (only use ids that exist in index.html)
         document.getElementById('edit-key').value = key;
 
@@ -720,11 +780,7 @@ async function saveEdit() {
             return;
         }
 
-        // Get form values
-        const room = document.getElementById('edit-room').value; // Room number might be changed by admin
-        const name = document.getElementById('edit-name').value;
         // Get form values (use correct ids from index.html)
-        const key = document.getElementById('edit-key').value;
         const date = document.getElementById('edit-date').value;
         const dueDate = document.getElementById('edit-due-date').value;
         const current = parseFloat(document.getElementById('edit-current').value) || 0;
@@ -749,10 +805,6 @@ async function saveEdit() {
         const total = units * rate;
         const waterUnits = currentWater - previousWater;
         const waterTotal = waterUnits * waterRate;
-
-        // Get existing data to preserve room and name
-        const snapshot = await db.ref(`electricityData/${editingIndex}`).once('value');
-        const existingData = snapshot.val();
 
         // Prepare update data
         const updateData = {
@@ -944,8 +996,8 @@ function getDueDateInfo(dueDateStr) {
 // --- Modal Controls ---
 function closeModal() {
     const modal = document.getElementById('edit-modal');
-    modal.classList.add('hidden');
     modal.classList.remove('flex');
+    modal.classList.add('hidden');
 }
 
 function viewEvidence(url, fileName = 'หลักฐานการชำระเงิน') {
@@ -1161,47 +1213,54 @@ function closeQrCodeModal() {
     modal.classList.remove('flex');
 }
 
-async function confirmDelete() {
-    if (!keyToDelete) {
+async function handleDeleteBill(key) {
+    if (!key) {
         showAlert('ไม่พบข้อมูลที่ต้องการลบ (No key to delete)', 'error');
-        closeDeleteConfirmModal();
         return;
     }
 
     try {
-        // Fetch the bill data again to double check permission for the room before actual deletion
-        const snapshot = await db.ref(`electricityData/${keyToDelete}`).once('value');
+        const snapshot = await db.ref(`electricityData/${key}`).once('value');
         const billData = snapshot.val();
 
         if (!billData) {
             showAlert('ไม่พบข้อมูลที่ต้องการลบแล้ว (อาจถูกลบไปแล้ว)', 'warning');
-            closeDeleteConfirmModal();
             return;
         }
 
         if (!hasPermission('canDeleteBills', billData.room)) {
             showAlert(`คุณไม่มีสิทธิ์ลบข้อมูลของห้อง ${billData.room}`, 'error');
-            closeDeleteConfirmModal();
             return;
         }
 
-        await db.ref(`electricityData/${keyToDelete}`).remove();
-        showAlert('ลบข้อมูลเรียบร้อยแล้ว', 'success');
-        
-        const params = new URLSearchParams(window.location.search);
-        const roomParam = params.get('room'); // Renamed to avoid conflict
-        currentPage = 1;
-        if (roomParam) { // Ensure roomParam exists before using it
-            renderHistoryTable(roomParam);
-            updatePreviousReadingFromDB(roomParam);
-        } else {
-            renderHomeRoomCards(); // Refresh home if on home page
+        if (billData.paymentConfirmed === true && window.currentUserRole !== 'admin' && window.currentUserRole !== '1') {
+            showAlert('ไม่สามารถลบข้อมูลได้ เนื่องจากเจ้าของห้องได้ยืนยันการชำระเงินแล้ว', 'error');
+            return;
         }
+
+        showConfirmModal({
+            title: 'ยืนยันการลบบิล',
+            text: `คุณแน่ใจหรือไม่ว่าต้องการลบบิลของวันที่ ${billData.date}? การกระทำนี้ไม่สามารถย้อนกลับได้`,
+            confirmButtonText: 'ลบทิ้ง',
+            confirmButtonClass: 'bg-red-600 hover:bg-red-700',
+            onConfirm: async () => {
+                await db.ref(`electricityData/${key}`).remove();
+                showAlert('ลบข้อมูลเรียบร้อยแล้ว', 'success');
+                
+                const params = new URLSearchParams(window.location.search);
+                const roomParam = params.get('room');
+                currentPage = 1;
+                if (roomParam) {
+                    renderHistoryTable(roomParam);
+                    updatePreviousReadingFromDB(roomParam);
+                } else {
+                    renderHomeRoomCards();
+                }
+            }
+        });
     } catch (error) {
-        console.error('Error deleting bill:', error);
+        console.error('Error preparing to delete bill:', error);
         showAlert('เกิดข้อผิดพลาดในการลบข้อมูล', 'error');
-    } finally {
-        closeDeleteConfirmModal(); // Ensure keyToDelete is cleared and modal is closed
     }
 }
 
@@ -2010,6 +2069,12 @@ async function deleteEvidence(key) {
             return;
         }
 
+        // Check if payment is already confirmed
+        if (data.paymentConfirmed === true) {
+            showAlert('ไม่สามารถลบหลักฐานได้ เนื่องจากเจ้าของห้องได้ยืนยันการชำระเงินแล้ว', 'error');
+            return;
+        }
+
         // Permission to delete evidence - using 'canUploadEvidence' for now, might need a specific 'canDeleteEvidence'
         if (!hasPermission('canUploadEvidence', data.room)) {
             showAlert(`คุณไม่มีสิทธิ์ลบหลักฐานสำหรับห้อง ${data.room}`, 'error');
@@ -2021,45 +2086,48 @@ async function deleteEvidence(key) {
             return;
         }
 
-        // Confirm deletion
-        if (!confirm('คุณแน่ใจหรือไม่ว่าต้องการลบหลักฐานนี้? การกระทำนี้ไม่สามารถย้อนกลับได้')) {
-            return;
-        }
-        
-        // Delete from Firebase Storage if URL exists
-        if (data.evidenceUrl && firebase.storage) {
-            try {
-                const storageRef = firebase.storage().refFromURL(data.evidenceUrl);
-                await storageRef.delete();
-                console.log('Evidence file deleted from storage');
-            } catch (storageError) {
-                console.error('Error deleting from storage:', storageError);
-                // Continue with database update even if storage deletion fails, but inform user.
-                showAlert('ลบไฟล์หลักฐานจาก Storage ไม่สำเร็จ แต่อัปเดตข้อมูลในระบบแล้ว', 'warning');
+        // Confirm deletion with new modal
+        showConfirmModal({
+            title: 'ยืนยันการลบหลักฐาน',
+            text: 'คุณแน่ใจหรือไม่ว่าต้องการลบหลักฐานนี้? การกระทำนี้ไม่สามารถย้อนกลับได้',
+            confirmButtonText: 'ใช่, ลบเลย',
+            confirmButtonClass: 'bg-orange-600 hover:bg-orange-700',
+            onConfirm: async () => {
+                // Delete from Firebase Storage if URL exists
+                if (data.evidenceUrl && firebase.storage) {
+                    try {
+                        const storageRef = firebase.storage().refFromURL(data.evidenceUrl);
+                        await storageRef.delete();
+                        console.log('Evidence file deleted from storage');
+                    } catch (storageError) {
+                        console.error('Error deleting from storage:', storageError);
+                        showAlert('ลบไฟล์หลักฐานจาก Storage ไม่สำเร็จ แต่อัปเดตข้อมูลในระบบแล้ว', 'warning');
+                    }
+                }
+                
+                // Update database to remove evidence references
+                await db.ref(`electricityData/${key}`).update({
+                    evidenceUrl: null,
+                    evidenceFileName: null,
+                    evidenceFileSize: null,
+                    evidenceFileType: null,
+                    evidenceUploadedAt: null,
+                    evidenceUploadedBy: null,
+                    evidenceDeletedAt: new Date().toISOString(),
+                    evidenceDeletedBy: auth.currentUser?.uid || 'unknown'
+                });
+                
+                showAlert('ลบหลักฐานเรียบร้อยแล้ว', 'success');
+                
+                // Refresh the table
+                const room = new URLSearchParams(window.location.search).get('room');
+                if (room) {
+                    renderHistoryTable(room);
+                } else {
+                    renderHomeRoomCards();
+                }
             }
-        }
-        
-        // Update database to remove evidence references
-        await db.ref(`electricityData/${key}`).update({
-            evidenceUrl: null,
-            evidenceFileName: null,
-            evidenceFileSize: null,
-            evidenceFileType: null,
-            evidenceUploadedAt: null,
-            evidenceUploadedBy: null,
-            evidenceDeletedAt: new Date().toISOString(),
-            evidenceDeletedBy: auth.currentUser?.uid || 'unknown'
         });
-        
-        showAlert('ลบหลักฐานเรียบร้อยแล้ว', 'success');
-        
-        // Refresh the table
-        const room = new URLSearchParams(window.location.search).get('room');
-        if (room) {
-            renderHistoryTable(room);
-        } else {
-            renderHomeRoomCards();
-        }
         
     } catch (error) {
         console.error('Error deleting evidence:', error);
@@ -2067,6 +2135,135 @@ async function deleteEvidence(key) {
     }
     
     console.log('=== deleteEvidence ended ===');
+}
+
+// Function to confirm payment by room owner
+async function confirmPayment(key) {
+    console.log('=== confirmPayment started ===');
+    console.log('Key parameter (bill key):', key);
+    
+    if (!key) {
+        showAlert('ไม่พบข้อมูล (key) ที่ต้องการยืนยันการชำระเงิน', 'error');
+        return;
+    }
+    
+    try {
+        // Get current bill data to find the room for permission check
+        const snapshot = await db.ref(`electricityData/${key}`).once('value');
+        const data = snapshot.val();
+        
+        if (!data || !data.room) {
+            showAlert('ไม่พบข้อมูลห้องสำหรับบิลนี้ ไม่สามารถตรวจสอบสิทธิ์ได้', 'error');
+            return;
+        }
+
+        // Check if payment is already confirmed
+        if (data.paymentConfirmed === true) {
+            showAlert('การชำระเงินได้รับการยืนยันแล้ว', 'info');
+            return;
+        }
+
+        // Check if evidence exists
+        if (!data.evidenceUrl) {
+            showAlert('ไม่พบหลักฐานการชำระเงิน กรุณาแนบหลักฐานก่อนยืนยัน', 'error');
+            return;
+        }
+
+        // Permission to confirm payment
+        if (!hasPermission('canConfirmPayment', data.room)) {
+            showAlert(`คุณไม่มีสิทธิ์ยืนยันการชำระเงินสำหรับห้อง ${data.room}`, 'error');
+            return;
+        }
+
+        showConfirmModal({
+            title: 'ยืนยันการชำระเงิน',
+            text: 'หลังจากยืนยันแล้ว ลูกบ้านจะไม่สามารถลบหลักฐานได้อีกต่อไป คุณแน่ใจหรือไม่?',
+            confirmButtonText: 'ยืนยันการชำระเงิน',
+            confirmButtonClass: 'bg-emerald-600 hover:bg-emerald-700',
+            onConfirm: async () => {
+                await db.ref(`electricityData/${key}`).update({
+                    paymentConfirmed: true,
+                    paymentConfirmedAt: new Date().toISOString(),
+                    paymentConfirmedBy: auth.currentUser?.uid || 'unknown'
+                });
+                
+                showAlert('ยืนยันการชำระเงินเรียบร้อยแล้ว', 'success');
+                
+                const room = new URLSearchParams(window.location.search).get('room');
+                if (room) {
+                    renderHistoryTable(room);
+                } else {
+                    renderHomeRoomCards();
+                }
+            }
+        });
+        
+    } catch (error) {
+        console.error('Error confirming payment:', error);
+        showAlert('เกิดข้อผิดพลาดในการยืนยันการชำระเงิน', 'error');
+    }
+    
+    console.log('=== confirmPayment ended ===');
+}
+
+function showConfirmModal({ title, text, confirmButtonText = 'ยืนยัน', cancelButtonText = 'ยกเลิก', confirmButtonClass = 'bg-red-600 hover:bg-red-700', onConfirm }) {
+    // Check if modal already exists
+    let modal = document.getElementById('global-confirm-modal');
+    if (modal) {
+        modal.remove(); // Remove previous instance to ensure clean state
+    }
+
+    // Create modal HTML
+    modal = document.createElement('div');
+    modal.id = 'global-confirm-modal';
+    modal.className = 'fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50';
+    modal.innerHTML = `
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl p-6 w-full max-w-md mx-4 shadow-lg text-center transform transition-all scale-95 opacity-0">
+            <h2 class="text-xl font-bold text-white mb-2">${title}</h2>
+            <p class="text-slate-400 mb-6">${text}</p>
+            <div class="flex justify-center gap-4">
+                <button id="confirm-modal-cancel" class="flex-1 px-4 py-2 bg-slate-600 hover:bg-slate-500 text-white rounded-lg font-medium transition-colors">
+                    ${cancelButtonText}
+                </button>
+                <button id="confirm-modal-confirm" class="flex-1 px-4 py-2 text-white rounded-lg font-medium transition-colors ${confirmButtonClass}">
+                    ${confirmButtonText}
+                </button>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+    
+    // Add animations for smooth appearance
+    setTimeout(() => {
+        const modalContent = modal.querySelector('.transform');
+        if (modalContent) {
+            modalContent.classList.remove('scale-95', 'opacity-0');
+            modalContent.classList.add('scale-100', 'opacity-100');
+        }
+    }, 10);
+
+    const confirmBtn = document.getElementById('confirm-modal-confirm');
+    const cancelBtn = document.getElementById('confirm-modal-cancel');
+    
+    const closeModal = () => {
+        const modalContent = modal.querySelector('.transform');
+        if (modalContent) {
+            modalContent.classList.add('scale-95', 'opacity-0');
+        }
+        setTimeout(() => {
+            modal.remove();
+        }, 200); // Wait for animation to finish
+    };
+
+    confirmBtn.onclick = () => {
+        if (typeof onConfirm === 'function') {
+            onConfirm();
+        }
+        closeModal();
+    };
+
+    cancelBtn.onclick = closeModal;
 }
 
 // Room management functions
@@ -2260,4 +2457,95 @@ async function confirmDeleteRoom() {
         console.error('Error deleting room:', error);
         showAlert('เกิดข้อผิดพลาดในการลบห้อง', 'error');
     }
+}
+
+function toggleDropdown(key, event) {
+    event.stopPropagation(); // Stop the click from bubbling to the document
+    closeAllDropdowns(key); // Close others before opening
+    const menu = document.getElementById(`more-actions-menu-${key}`);
+    if (menu) {
+        menu.classList.toggle('hidden');
+    }
+}
+
+function closeAllDropdowns(exceptKey = null) {
+    const allMenus = document.querySelectorAll('[id^="more-actions-menu-"]');
+    allMenus.forEach(m => {
+        const key = m.id.replace('more-actions-menu-', '');
+        if (key !== exceptKey) {
+            m.classList.add('hidden');
+        }
+    });
+}
+
+function closeActionsMenu() {
+    const menu = document.getElementById('global-actions-menu');
+    if (menu) {
+        menu.remove();
+    }
+}
+
+function openActionsMenu(event, bill) {
+    event.stopPropagation();
+    closeActionsMenu(); // Close any existing menu first
+
+    const room = new URLSearchParams(window.location.search).get('room');
+    const isPaymentConfirmed = bill.paymentConfirmed === true;
+    const canDeleteEvidence = hasPermission('canUploadEvidence', room) && bill.evidenceUrl && !isPaymentConfirmed;
+    const canDeleteRow = hasPermission('canDeleteBills', room) && (!isPaymentConfirmed || window.currentUserRole === 'admin' || window.currentUserRole === '1');
+
+    // Build menu items
+    let menuItems = '';
+    if (hasPermission('canEditAllBills', room)) {
+        menuItems += `
+            <a href="#" onclick="event.preventDefault(); openEditModal('${bill.key}')" class="flex items-center gap-3 px-4 py-2 text-sm text-slate-300 hover:bg-slate-700" role="menuitem">
+                <i class="fas fa-edit fa-fw"></i>
+                <span>แก้ไข</span>
+            </a>
+        `;
+    }
+    if (canDeleteEvidence) {
+        menuItems += `
+            <a href="#" onclick="event.preventDefault(); deleteEvidence('${bill.key}')" class="flex items-center gap-3 px-4 py-2 text-sm text-orange-400 hover:bg-slate-700 hover:text-orange-300" role="menuitem">
+                <i class="fas fa-file-excel fa-fw"></i>
+                <span>ลบหลักฐาน</span>
+            </a>
+        `;
+    }
+    if (canDeleteRow) {
+         menuItems += `
+            <a href="#" onclick="event.preventDefault(); handleDeleteBill('${bill.key}')" class="flex items-center gap-3 px-4 py-2 text-sm text-red-400 hover:bg-slate-700 hover:text-red-300" role="menuitem">
+                <i class="fas fa-trash fa-fw"></i>
+                <span>ลบบิลนี้</span>
+            </a>
+        `;
+    }
+
+    if (!menuItems.trim()) return; // Don't show empty menu
+
+    // Create menu container
+    const menu = document.createElement('div');
+    menu.id = 'global-actions-menu';
+    menu.className = 'origin-top-right absolute mt-2 w-48 rounded-md shadow-lg bg-slate-800 ring-1 ring-black ring-opacity-5 focus:outline-none z-30 border border-slate-700';
+    menu.innerHTML = `<div class="py-1" role="menu" aria-orientation="vertical">${menuItems}</div>`;
+    
+    document.body.appendChild(menu);
+
+    // Position the menu
+    const rect = event.currentTarget.getBoundingClientRect();
+    menu.style.position = 'fixed';
+    
+    // Position it, then check if it overflows, and adjust if necessary
+    let top = rect.bottom + 4;
+    let left = rect.right - menu.offsetWidth;
+
+    if (left < 0) {
+        left = rect.left; // Align to left if it overflows left
+    }
+    if (top + menu.offsetHeight > window.innerHeight) {
+        top = rect.top - menu.offsetHeight - 4; // Flip to top if it overflows bottom
+    }
+
+    menu.style.top = `${top}px`;
+    menu.style.left = `${left}px`;
 }

@@ -25,6 +25,7 @@ const ROLE_PERMISSIONS = {
         canGenerateQRCode: true,
         canViewHistory: true,
         canManageTenants: true, // Admin can manage tenants for level1 users
+        canConfirmPayment: true, // Admin can confirm payments for all rooms
     },
     'user': { // General user, might not have access to specific room data unless explicitly granted
         canManageUsers: false,
@@ -38,19 +39,21 @@ const ROLE_PERMISSIONS = {
         canGenerateQRCode: true, // Can generate for their own bills if any
         canViewHistory: true, // Can view their own history if any
         canManageTenants: false,
+        canConfirmPayment: false, // General users cannot confirm payments
     },
     '1': { // Level 1 Owner (เจ้าของห้อง)
         canManageUsers: false, // Cannot manage general users, but can manage their tenants
         canManageRoles: false,
         canViewAllRooms: false, // Should only see their managed rooms
-        canEditAllBills: false, // Should only edit bills for their managed rooms
-        canDeleteBills: false, // Should only delete bills for their managed rooms
+        canEditAllBills: true, // Should only edit bills for their managed rooms
+        canDeleteBills: true, // Should only delete bills for their managed rooms
         canUploadEvidence: true, // For their managed rooms
         canViewReports: false, // Or specific reports for their rooms
         canAddNewBills: true, // For their managed rooms
         canGenerateQRCode: true, // For their managed rooms
         canViewHistory: true, // For their managed rooms
         canManageTenants: true, // Key permission for Level 1 Owner
+        canConfirmPayment: true, // Room owners can confirm payments for their managed rooms
     },
     'level1_tenant': { // ลูกบ้าน
         canManageUsers: false,
@@ -64,6 +67,7 @@ const ROLE_PERMISSIONS = {
         canGenerateQRCode: true, // For their accessible rooms' bills
         canViewHistory: true, // For their accessible rooms
         canManageTenants: false,
+        canConfirmPayment: false, // Tenants cannot confirm payments
     },
     '2': { // Level 2 (อาจจะยังคงเดิมหรือปรับเปลี่ยนตามความเหมาะสม)
         canManageUsers: false,
@@ -77,6 +81,7 @@ const ROLE_PERMISSIONS = {
         canGenerateQRCode: true, // Potentially for specific cases
         canViewHistory: true,  // Potentially for specific cases
         canManageTenants: false,
+        canConfirmPayment: false, // Level 2 cannot confirm payments
     }
 };
 
