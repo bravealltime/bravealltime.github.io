@@ -2986,6 +2986,24 @@ async function populateBulkRoomsData() {
 
         modalBody.innerHTML = formHTML;
 
+        // Initialize date pickers for the bulk modal
+        if (typeof flatpickr !== 'undefined') {
+            const commonDarkThemeOptions = {
+                theme: "dark",
+                dateFormat: "d/m/Y"
+            };
+
+            flatpickr("#bulk-date", {
+                ...commonDarkThemeOptions,
+                defaultDate: "today"
+            });
+
+            flatpickr("#bulk-due-date", {
+                ...commonDarkThemeOptions,
+                defaultDate: new Date().fp_incr(15) // Default to 15 days from now
+            });
+        }
+
     } catch (error) {
         console.error('Error populating bulk rooms data:', error);
         modalBody.innerHTML = '<p class="text-center text-red-400">เกิดข้อผิดพลาดในการโหลดข้อมูลห้อง</p>';
